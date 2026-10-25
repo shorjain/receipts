@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 from common import insiders
 from common.log import get_logger
-from pipelines.search_x import run_search, utcnow
+from pipelines.search_x import budget_left, run_search, utcnow
 
 log = get_logger("sweep_insiders")
 MAX_LOOKBACK = timedelta(hours=6)
@@ -49,6 +49,8 @@ def run(store, client, now: datetime | None = None, force: bool = False,
     games = store.games_between(now - timedelta(hours=6), now + timedelta(days=2))
     if not force and not due(store, now, games):
         return None
+    if budget_left(store, "sweep", now) <= 0:
+        return None  # cap reached; the spend alert already went out, so skip quietly
     last = last_sweep_end(store)
     start = max(last, now - MAX_LOOKBACK) if last else now - MAX_LOOKBACK
     posts = run_search(store, client, sweep_handles(now, games, include_unverified), start, now, "sweep", now=now)

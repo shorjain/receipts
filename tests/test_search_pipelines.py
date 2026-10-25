@@ -162,3 +162,11 @@ def test_spend_alerts_fire_once_per_threshold(store, monkeypatch):
     store.insert_search_run({"run_id": "c", "purpose": "sweep", "cost_estimate_usd": 3.0, "ran_at": T0})
     assert search_x.check_spend_alerts(store, T0, send) == ["cap"]
     assert sent == ["NFL Lines: xAI spend", "NFL Lines: X search paused"]
+
+
+def test_sweep_skips_quietly_when_budget_is_spent(store, la_lv_game):
+    store.upsert_games([la_lv_game])
+    store.insert_search_run({"run_id": "x", "purpose": "sweep", "cost_estimate_usd": 5.0,
+                             "ran_at": datetime(2026, 10, 25, 11)})
+    client = FakeClient({})
+    assert sweep_insiders.run(store, client, now=datetime(2026, 10, 25, 12)) is None and client.calls == []

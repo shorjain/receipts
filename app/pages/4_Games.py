@@ -29,7 +29,7 @@ if live.empty:
 else:
     latest = live.sort_values("made_at").groupby("game_id").tail(1)
     df = latest.merge(gm[["game_id", "home", "away", "kickoff_at", "week"]], on="game_id")
-    df = df[df["kickoff_at"] > pd.Timestamp.utcnow().tz_localize(None)].sort_values("kickoff_at")
+    df = df[df["kickoff_at"] > pd.Timestamp.now("UTC").tz_localize(None)].sort_values("kickoff_at")
     df["gap"] = df["home_win_prob"] - df["market_prob_at_time"]
     st.caption(f"P(home win). Market = Kalshi (else Polymarket, else book consensus) when the prediction was made. "
                f"⚠️ marks gaps of {THRESH:.0%} or more; with this model, a gap is more often the model missing "
