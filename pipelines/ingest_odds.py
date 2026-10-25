@@ -10,7 +10,10 @@ keeps a reference point inside the 30-minute lookback so a jump after a long
 quiet stretch is still detected.
 
 Run:  python -m pipelines.ingest_odds --once       one pass (Odds API only if due)
-      python -m pipelines.ingest_odds --loop       keep polling
+      python -m pipelines.ingest_odds --loop       keep polling; every --analyze-every
+                                                   minutes (default 10) also run
+                                                   detect_moves and compare_venues, since
+                                                   DuckDB allows only one writing process
       python -m pipelines.ingest_odds --once --force-odds-api
 """
 from __future__ import annotations
@@ -160,15 +163,26 @@ def main() -> None:
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--loop", action="store_true")
     ap.add_argument("--force-odds-api", action="store_true")
+    ap.add_argument("--analyze-every", type=float, default=10,
+                    help="minutes between detect_moves + compare_venues runs in --loop (0 = never)")
     args = ap.parse_args()
     store = get_store()
     store.create_schema()
     if args.loop:
         period = env_int("KALSHI_POLL_SECONDS", 60)
+        from pipelines import compare_venues, detect_moves
         pm_poller = PolymarketPoller()
+        last_analysis = 0.0
         while True:
             started = time.time()
             run_once(store, pm_poller=pm_poller)
+            if args.analyze_every and started - last_analysis >= args.analyze_every * 60:
+                try:
+                    detect_moves.run(store, hours=24)
+                    compare_venues.run(store, hours=24)
+                except Exception as e:
+                    log.error("analysis failed: %s", e)
+                last_analysis = started
             time.sleep(max(1, period - (time.time() - started)))
     else:
         run_once(store, args.force_odds_api)
