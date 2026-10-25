@@ -56,6 +56,20 @@ python -m scripts.probe_odds_api     # needs ODDS_API_KEY, costs ~3 credits
 python -m scripts.probe_snowflake --guardrails   # needs Snowflake creds + ACCOUNTADMIN
 ```
 
+## Snowflake setup
+
+1. Create a key pair outside the repo:
+   `mkdir -p ~/.snowflake && openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out ~/.snowflake/rsa_key.p8 -nocrypt && chmod 600 ~/.snowflake/rsa_key.p8`
+2. Register the public half (`openssl rsa -in ~/.snowflake/rsa_key.p8 -pubout`, without the BEGIN/END lines) in a worksheet. Your internal user name can differ from your login name, so let Snowflake fill it in:
+   ```sql
+   SET me = '"' || CURRENT_USER() || '"';
+   ALTER USER IDENTIFIER($me) SET RSA_PUBLIC_KEY='<public key>';
+   ```
+3. In `.env`: `SNOWFLAKE_USER` is your login name, and `SNOWFLAKE_PRIVATE_KEY_PATH=~/.snowflake/rsa_key.p8`.
+4. `python -m scripts.probe_snowflake --guardrails` creates the X-Small warehouse (auto-suspend 60 s), the resource monitor, the database (owned by `SNOWFLAKE_ROLE`) and the tables, then checks `AI_EMBED` and `AI_COMPLETE`.
+
+Cortex functions take the model name as a SQL literal, not a bind parameter; `store/snowflake.py` validates the name before inlining it.
+
 ## Store
 
 `STORE_BACKEND=duckdb` (default) writes to `data/nfl_lines.duckdb` with no account. `STORE_BACKEND=snowflake` uses Snowflake. Both implement the same interface (`store/base.py`). All SQL lives in `store/`; `tests/test_repo_rules.py` fails if SQL shows up anywhere else.
@@ -130,7 +144,7 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `STORE_BACKEND` | `duckdb` | `duckdb` or `snowflake` |
 | `DUCKDB_PATH` | `data/nfl_lines.duckdb` | DuckDB file |
 | `SNOWFLAKE_ACCOUNT`, `_USER`, `_ROLE`, `_WAREHOUSE`, `_DATABASE`, `_SCHEMA` | | connection |
-| `SNOWFLAKE_PASSWORD` / `SNOWFLAKE_PRIVATE_KEY_PATH` | | auth (key pair preferred) |
+| `SNOWFLAKE_PASSWORD` / `SNOWFLAKE_PRIVATE_KEY_PATH` | | auth; key pair recommended (see "Snowflake setup") |
 | `SNOWFLAKE_CREDIT_CAP` | `20` | monthly credits before the resource monitor suspends the warehouse |
 | `SNOWFLAKE_EMBED_MODEL` | `snowflake-arctic-embed-m-v1.5` | `AI_EMBED` model (768 dims) |
 | `SNOWFLAKE_COMPLETE_MODEL` | `claude-sonnet-4-5` | `AI_COMPLETE` model |

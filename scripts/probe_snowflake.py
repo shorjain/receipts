@@ -21,7 +21,10 @@ def main() -> None:
     s.create_schema()
     print("schema ok")
     print("embed dims:", len(s.embed_texts(["Bills line moves after injury news"])[0]))
-    print("complete:", s.complete("Reply with the single word OK.")[:80])
+    try:
+        print("complete:", s.complete("Reply with the single word OK.")[:80])
+    finally:
+        s.close()
 
 
 if __name__ == "__main__":

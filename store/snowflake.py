@@ -3,6 +3,8 @@ account-level cost guardrails (X-Small warehouse, auto-suspend, resource monitor
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 from typing import Sequence
 
 import snowflake.connector
@@ -20,10 +22,12 @@ def _connect_kwargs() -> dict:
         "role": env("SNOWFLAKE_ROLE"), "warehouse": env("SNOWFLAKE_WAREHOUSE"),
         "database": env("SNOWFLAKE_DATABASE"), "schema": env("SNOWFLAKE_SCHEMA", "PUBLIC"),
         "client_session_keep_alive": False,
+        "enable_server_session_keep_alive_auto_detection": False,
     }
     key_path = env("SNOWFLAKE_PRIVATE_KEY_PATH")
-    if key_path:
-        kw["private_key_file"] = key_path
+    if key_path:  # key-pair (JWT) sign-in; the password is ignored
+        kw["authenticator"] = "SNOWFLAKE_JWT"
+        kw["private_key_file"] = str(Path(key_path).expanduser())
     else:
         kw["password"] = env("SNOWFLAKE_PASSWORD")
     return kw
@@ -88,20 +92,27 @@ class SnowflakeStore(SqlStore):
             self._execute(s)
 
     # ---- Cortex -------------------------------------------------------------
+    @staticmethod
+    def _model_literal(name: str) -> str:
+        """Cortex wants the model as a string literal, not a bind; allow only safe names."""
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+            raise ValueError(f"unsafe model name: {name!r}")
+        return f"'{name}'"
+
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        model = env("SNOWFLAKE_EMBED_MODEL", "snowflake-arctic-embed-m-v1.5")
+        model = self._model_literal(env("SNOWFLAKE_EMBED_MODEL", "snowflake-arctic-embed-m-v1.5"))
         out = []
         for t in texts:
-            row = self._query("SELECT AI_EMBED(?, ?)::ARRAY AS e", [model, t])[0]["e"]
+            row = self._query(f"SELECT AI_EMBED({model}, ?)::ARRAY AS e", [t])[0]["e"]
             out.append(json.loads(row) if isinstance(row, str) else list(row))
         return out
 
     def complete(self, prompt: str, temperature: float = 0.0) -> str:
-        model = env("SNOWFLAKE_COMPLETE_MODEL", "claude-sonnet-4-5")
+        model = self._model_literal(env("SNOWFLAKE_COMPLETE_MODEL", "claude-sonnet-4-5"))
         row = self._query(
-            "SELECT AI_COMPLETE(model => ?, prompt => ?, "
+            f"SELECT AI_COMPLETE(model => {model}, prompt => ?, "
             "model_parameters => PARSE_JSON(?)) AS r",
-            [model, prompt, json.dumps({"temperature": temperature})],
+            [prompt, json.dumps({"temperature": temperature})],
         )[0]["r"]
         return row if isinstance(row, str) else json.dumps(row)
 
