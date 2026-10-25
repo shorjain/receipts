@@ -46,3 +46,17 @@ def test_credit_floor_blocks_calls(monkeypatch):
     c.remaining = 51
     with pytest.raises(odds_api.CreditsExhausted):
         c.odds()
+
+
+def test_normalize_recorded_response():
+    """Real /odds response from scripts/probe_odds_api.py (Oct 25 2026)."""
+    events = load_fixture("odds_api_odds.json")
+    games = [{"game_id": f"g{i}", "home": odds_api.teams.from_full_name(e["home_team"]),
+              "away": odds_api.teams.from_full_name(e["away_team"]),
+              "kickoff_at": odds_api._parse_ts(e["commence_time"])} for i, e in enumerate(events)]
+    markets, snaps = odds_api.normalize(events, games, datetime(2026, 10, 25, 14))
+    pin = [s for s in snaps if s["market_id"].startswith("pinnacle:") and s["market_id"].endswith(":winner")]
+    assert len(pin) == len(events)
+    assert all(0 < s["implied_prob"] < 1 for s in pin)
+    totals = [s for s in snaps if s["market_id"].startswith("consensus:") and s["market_id"].endswith(":total")]
+    assert all(30 < s["line"] < 65 for s in totals)

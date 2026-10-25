@@ -63,7 +63,9 @@ class SnowflakeStore(SqlStore):
     def setup_account_guardrails(self) -> None:
         wh, db = env("SNOWFLAKE_WAREHOUSE"), env("SNOWFLAKE_DATABASE")
         cap = env_int("SNOWFLAKE_CREDIT_CAP", 20)
+        role = env("SNOWFLAKE_ROLE", "SYSADMIN")
         stmts = [
+            # Account-level pieces need ACCOUNTADMIN.
             "USE ROLE ACCOUNTADMIN",
             f"CREATE WAREHOUSE IF NOT EXISTS {wh} WAREHOUSE_SIZE = 'XSMALL' "
             "AUTO_SUSPEND = 60 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = TRUE",
@@ -73,13 +75,14 @@ class SnowflakeStore(SqlStore):
             "TRIGGERS ON 80 PERCENT DO NOTIFY ON 100 PERCENT DO SUSPEND "
             "ON 110 PERCENT DO SUSPEND_IMMEDIATE",
             f"ALTER WAREHOUSE {wh} SET RESOURCE_MONITOR = NFL_LINES_MONITOR",
+            f"GRANT USAGE, OPERATE ON WAREHOUSE {wh} TO ROLE {role}",
+            # The app's role creates (and so owns) the database and its schema.
+            f"USE ROLE {role}",
+            f"USE WAREHOUSE {wh}",
             f"CREATE DATABASE IF NOT EXISTS {db}",
-            f"GRANT USAGE ON WAREHOUSE {wh} TO ROLE {env('SNOWFLAKE_ROLE', 'SYSADMIN')}",
-            f"GRANT OWNERSHIP ON DATABASE {db} TO ROLE {env('SNOWFLAKE_ROLE', 'SYSADMIN')} "
-            "COPY CURRENT GRANTS",
-            f"USE ROLE {env('SNOWFLAKE_ROLE', 'SYSADMIN')}",
             f"USE DATABASE {db}",
             f"CREATE SCHEMA IF NOT EXISTS {env('SNOWFLAKE_SCHEMA', 'PUBLIC')}",
+            f"USE SCHEMA {env('SNOWFLAKE_SCHEMA', 'PUBLIC')}",
         ]
         for s in stmts:
             self._execute(s)

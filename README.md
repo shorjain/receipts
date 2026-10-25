@@ -142,7 +142,7 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `POLYMARKET_MIN_VOLUME` | `500` | min 24h USD volume for a Polymarket quote to count |
 | `POLYMARKET_MAX_SPREAD` | `0.04` | max bid-ask in dollars |
 | `ODDS_API_KEY` | | The Odds API |
-| `ODDS_API_BOOKMAKERS` | pinnacle, DK, FD, MGM, Caesars, ESPN BET | ≤ 10 books bill as one region |
+| `ODDS_API_BOOKMAKERS` | pinnacle, DK, FD, MGM, Caesars (`williamhill_us`), ESPN BET | ≤ 10 books bill as one region |
 | `ODDS_API_MIN_CREDITS` | `50` | stop calling below this |
 | `ODDS_API_LIVE_MIN_CREDITS` | `5000` | keep started games only above this |
 | `XAI_API_KEY`, `XAI_MODEL` | | Grok x_search (milestone 4) |
