@@ -1,0 +1,564 @@
+# Tracked X accounts. Data, not code: edit freely.
+#
+# verified: false means the handle came from memory and has NOT been checked yet.
+# Beat reporters change outlets and handles often. Run
+#   python -m scripts.verify_handles      (milestone 4, needs XAI_API_KEY)
+# to confirm each handle exists and posted in the last 30 days; it flips
+# verified to true or reports the handle so you can fix it. Sweeps skip
+# unverified handles unless you pass --include-unverified.
+#
+# Known gaps to review: ARI and ATL have one candidate each; MIA (Marcel_LJ)
+# and HOU (DJ_Bien_Aime) handles are the least certain; outlets may be out of date.
+insiders:
+- handle: AdamSchefter
+  name: Adam Schefter
+  outlet: ESPN
+  tier: national
+  teams: []
+  verified: true
+  active: true
+- handle: RapSheet
+  name: Ian Rapoport
+  outlet: NFL Network
+  tier: national
+  teams: []
+  verified: true
+  active: true
+- handle: TomPelissero
+  name: Tom Pelissero
+  outlet: NFL Network
+  tier: national
+  teams: []
+  verified: true
+  active: true
+- handle: MikeGarafolo
+  name: Mike Garafolo
+  outlet: NFL Network
+  tier: national
+  teams: []
+  verified: true
+  active: true
+- handle: DMRussini
+  name: Dianna Russini
+  outlet: The Athletic
+  tier: national
+  teams: []
+  verified: true
+  active: true
+- handle: JFowlerESPN
+  name: Jeremy Fowler
+  outlet: ESPN
+  tier: national
+  teams: []
+  verified: true
+  active: true
+- handle: Schultz_Report
+  name: Jordan Schultz
+  outlet: FOX Sports
+  tier: national
+  teams: []
+  verified: true
+  active: true
+- handle: FieldYates
+  name: Field Yates
+  outlet: ESPN
+  tier: national
+  teams: []
+  verified: true
+  active: true
+- handle: DarrenUrban
+  name: Darren Urban
+  outlet: Cardinals.com
+  tier: beat
+  teams:
+  - ARI
+  verified: false
+  active: true
+- handle: JoshKendallATH
+  name: Josh Kendall
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - ATL
+  verified: false
+  active: true
+- handle: jamisonhensley
+  name: Jamison Hensley
+  outlet: ESPN
+  tier: beat
+  teams:
+  - BAL
+  verified: false
+  active: true
+- handle: jeffzrebiec
+  name: Jeff Zrebiec
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - BAL
+  verified: false
+  active: true
+- handle: agetzenberg
+  name: Alaina Getzenberg
+  outlet: ESPN
+  tier: beat
+  teams:
+  - BUF
+  verified: false
+  active: true
+- handle: JoeBuscaglia
+  name: Joe Buscaglia
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - BUF
+  verified: false
+  active: true
+- handle: josephperson
+  name: Joseph Person
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - CAR
+  verified: false
+  active: true
+- handle: DNewtonespn
+  name: David Newton
+  outlet: ESPN
+  tier: beat
+  teams:
+  - CAR
+  verified: false
+  active: true
+- handle: CourtneyRCronin
+  name: Courtney Cronin
+  outlet: ESPN
+  tier: beat
+  teams:
+  - CHI
+  verified: false
+  active: true
+- handle: adamjahns
+  name: Adam Jahns
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - CHI
+  verified: false
+  active: true
+- handle: PaulDehnerJr
+  name: Paul Dehner Jr.
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - CIN
+  verified: false
+  active: true
+- handle: ByBenBaby
+  name: Ben Baby
+  outlet: ESPN
+  tier: beat
+  teams:
+  - CIN
+  verified: false
+  active: true
+- handle: MaryKayCabot
+  name: Mary Kay Cabot
+  outlet: Cleveland.com
+  tier: beat
+  teams:
+  - CLE
+  verified: false
+  active: true
+- handle: ZacJackson
+  name: Zac Jackson
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - CLE
+  verified: false
+  active: true
+- handle: toddarcher
+  name: Todd Archer
+  outlet: ESPN
+  tier: beat
+  teams:
+  - DAL
+  verified: false
+  active: true
+- handle: ClarenceHillJr
+  name: Clarence Hill Jr.
+  outlet: All City DLLS
+  tier: beat
+  teams:
+  - DAL
+  verified: false
+  active: true
+- handle: MikeKlis
+  name: Mike Klis
+  outlet: 9News
+  tier: beat
+  teams:
+  - DEN
+  verified: false
+  active: true
+- handle: ZacStevensDNVR
+  name: Zac Stevens
+  outlet: DNVR
+  tier: beat
+  teams:
+  - DEN
+  verified: false
+  active: true
+- handle: davebirkett
+  name: Dave Birkett
+  outlet: Detroit Free Press
+  tier: beat
+  teams:
+  - DET
+  verified: false
+  active: true
+- handle: ColtonPouncy
+  name: Colton Pouncy
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - DET
+  verified: false
+  active: true
+- handle: RobDemovsky
+  name: Rob Demovsky
+  outlet: ESPN
+  tier: beat
+  teams:
+  - GB
+  verified: false
+  active: true
+- handle: mattschneidman
+  name: Matt Schneidman
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - GB
+  verified: false
+  active: true
+- handle: AaronWilson_NFL
+  name: Aaron Wilson
+  outlet: KPRC 2
+  tier: beat
+  teams:
+  - HOU
+  verified: false
+  active: true
+- handle: DJ_Bien_Aime
+  name: DJ Bien-Aime
+  outlet: ESPN
+  tier: beat
+  teams:
+  - HOU
+  verified: false
+  active: true
+- handle: zkeefer
+  name: Zak Keefer
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - IND
+  verified: false
+  active: true
+- handle: JoelAErickson
+  name: Joel A. Erickson
+  outlet: Indianapolis Star
+  tier: beat
+  teams:
+  - IND
+  verified: false
+  active: true
+- handle: MikeDiRocco
+  name: Michael DiRocco
+  outlet: ESPN
+  tier: beat
+  teams:
+  - JAX
+  verified: false
+  active: true
+- handle: JohnReidIV
+  name: John Reid
+  outlet: Florida Times-Union
+  tier: beat
+  teams:
+  - JAX
+  verified: false
+  active: true
+- handle: AdamTeicher
+  name: Adam Teicher
+  outlet: ESPN
+  tier: beat
+  teams:
+  - KC
+  verified: false
+  active: true
+- handle: JesseNewell
+  name: Jesse Newell
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - KC
+  verified: false
+  active: true
+- handle: VBonsignore
+  name: Vincent Bonsignore
+  outlet: Las Vegas Review-Journal
+  tier: beat
+  teams:
+  - LV
+  verified: false
+  active: true
+- handle: PaulGutierrez
+  name: Paul Gutierrez
+  outlet: ESPN
+  tier: beat
+  teams:
+  - LV
+  verified: false
+  active: true
+- handle: krisrhim
+  name: Kris Rhim
+  outlet: ESPN
+  tier: beat
+  teams:
+  - LAC
+  verified: false
+  active: true
+- handle: DanielRPopper
+  name: Daniel Popper
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - LAC
+  verified: false
+  active: true
+- handle: JourdanRodrigue
+  name: Jourdan Rodrigue
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - LA
+  verified: false
+  active: true
+- handle: LATimesklein
+  name: Gary Klein
+  outlet: Los Angeles Times
+  tier: beat
+  teams:
+  - LA
+  verified: false
+  active: true
+- handle: Marcel_LJ
+  name: Marcel Louis-Jacques
+  outlet: ESPN
+  tier: beat
+  teams:
+  - MIA
+  verified: false
+  active: true
+- handle: Joe_Schad
+  name: Joe Schad
+  outlet: Palm Beach Post
+  tier: beat
+  teams:
+  - MIA
+  verified: false
+  active: true
+- handle: KevinSeifert
+  name: Kevin Seifert
+  outlet: ESPN
+  tier: beat
+  teams:
+  - MIN
+  verified: false
+  active: true
+- handle: alec_lewis
+  name: Alec Lewis
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - MIN
+  verified: false
+  active: true
+- handle: MikeReiss
+  name: Mike Reiss
+  outlet: ESPN
+  tier: beat
+  teams:
+  - NE
+  verified: false
+  active: true
+- handle: ChadGraff
+  name: Chad Graff
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - NE
+  verified: false
+  active: true
+- handle: Katherine_Terrell
+  name: Katherine Terrell
+  outlet: ESPN
+  tier: beat
+  teams:
+  - 'NO'
+  verified: false
+  active: true
+- handle: LukeJohnsonNOLA
+  name: Luke Johnson
+  outlet: Times-Picayune
+  tier: beat
+  teams:
+  - 'NO'
+  verified: false
+  active: true
+- handle: DanDuggan
+  name: Dan Duggan
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - NYG
+  verified: false
+  active: true
+- handle: JordanRaanan
+  name: Jordan Raanan
+  outlet: ESPN
+  tier: beat
+  teams:
+  - NYG
+  verified: false
+  active: true
+- handle: RichCimini
+  name: Rich Cimini
+  outlet: ESPN
+  tier: beat
+  teams:
+  - NYJ
+  verified: false
+  active: true
+- handle: Connor_J_Hughes
+  name: Connor Hughes
+  outlet: SNY
+  tier: beat
+  teams:
+  - NYJ
+  verified: false
+  active: true
+- handle: JeffMcLane
+  name: Jeff McLane
+  outlet: Philadelphia Inquirer
+  tier: beat
+  teams:
+  - PHI
+  verified: false
+  active: true
+- handle: ZBerm
+  name: Zach Berman
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - PHI
+  verified: false
+  active: true
+- handle: BrookePryor
+  name: Brooke Pryor
+  outlet: ESPN
+  tier: beat
+  teams:
+  - PIT
+  verified: false
+  active: true
+- handle: MarkKaboly
+  name: Mark Kaboly
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - PIT
+  verified: false
+  active: true
+- handle: mattbarrows
+  name: Matt Barrows
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - SF
+  verified: false
+  active: true
+- handle: NickWagoner
+  name: Nick Wagoner
+  outlet: ESPN
+  tier: beat
+  teams:
+  - SF
+  verified: false
+  active: true
+- handle: BradyHenderson
+  name: Brady Henderson
+  outlet: ESPN
+  tier: beat
+  teams:
+  - SEA
+  verified: false
+  active: true
+- handle: bcondotta
+  name: Bob Condotta
+  outlet: Seattle Times
+  tier: beat
+  teams:
+  - SEA
+  verified: false
+  active: true
+- handle: JennaLaineESPN
+  name: Jenna Laine
+  outlet: ESPN
+  tier: beat
+  teams:
+  - TB
+  verified: false
+  active: true
+- handle: gregauman
+  name: Greg Auman
+  outlet: FOX Sports
+  tier: beat
+  teams:
+  - TB
+  verified: false
+  active: true
+- handle: TurronDavenport
+  name: Turron Davenport
+  outlet: ESPN
+  tier: beat
+  teams:
+  - TEN
+  verified: false
+  active: true
+- handle: PaulKuharskyNFL
+  name: Paul Kuharsky
+  outlet: PaulKuharsky.com
+  tier: beat
+  teams:
+  - TEN
+  verified: false
+  active: true
+- handle: john_keim
+  name: John Keim
+  outlet: ESPN
+  tier: beat
+  teams:
+  - WAS
+  verified: false
+  active: true
+- handle: BenStandig
+  name: Ben Standig
+  outlet: The Athletic
+  tier: beat
+  teams:
+  - WAS
+  verified: false
+  active: true
