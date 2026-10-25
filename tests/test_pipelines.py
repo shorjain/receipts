@@ -86,3 +86,31 @@ def test_compare_venues_run_writes_gaps_and_reactions(store, la_lv_game):
     move = store.line_moves()[0]
     assert move["leader_venue"] == "polymarket" and move["lead_lag_minutes"] == 4.0
     assert summary["polymarket_first"] == 1
+
+
+def test_daily_allowance_spreads_credits_over_the_month():
+    oct25 = datetime(2026, 10, 25, 14)                  # 7 days left including today
+    assert ingest_odds.daily_allowance(491, oct25, 3, 50) == 21
+    assert ingest_odds.daily_allowance(500, datetime(2026, 11, 1, 14), 3, 50) == 5
+    assert ingest_odds.daily_allowance(60, oct25, 3, 50) == 0
+    assert ingest_odds.daily_allowance(None, oct25, 3, 50) == 1
+
+
+def test_paced_schedule_baselines_moves_and_allowance(store, la_lv_game, monkeypatch):
+    monkeypatch.setenv("ODDS_API_MIN_CREDITS", "50")
+    store.upsert_games([la_lv_game])
+    nine_et, ten_oh5_et = datetime(2026, 10, 25, 13, 0), datetime(2026, 10, 25, 14, 5)
+    assert ingest_odds.odds_api_reason(store, nine_et, [la_lv_game], 3, 400) is None
+    assert ingest_odds.odds_api_reason(store, ten_oh5_et, [la_lv_game], 3, 400) == "baseline 10:00 ET"
+    store.upsert("API_USAGE", [{"called_at": ten_oh5_et, "source": "odds_api", "endpoint": "/odds",
+                                "cost_units": 3, "remaining": 397}])
+    later = ten_oh5_et + timedelta(minutes=45)
+    assert ingest_odds.odds_api_reason(store, later, [la_lv_game], 3, 397) is None
+    store.upsert_line_moves([{"move_id": "m", "game_id": "2026_07_LA_LV", "market_type": "winner",
+                              "venues": "kalshi", "window_start": later - timedelta(minutes=20),
+                              "window_end": later - timedelta(minutes=5)}])
+    assert ingest_odds.odds_api_reason(store, later, [la_lv_game], 3, 397) == "move in 2026_07_LA_LV"
+    # cooldown: a move 10 minutes after the last poll waits
+    assert ingest_odds.odds_api_reason(store, ten_oh5_et + timedelta(minutes=10), [la_lv_game], 3, 397) is None
+    # out of allowance for today
+    assert ingest_odds.odds_api_reason(store, later, [la_lv_game], 3, 52) is None

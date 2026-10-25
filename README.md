@@ -42,7 +42,6 @@ Individual stages:
 python -m pipelines.load_nflverse --season 2026     # GAMES + ROSTERS
 python -m pipelines.ingest_odds --once              # one Kalshi poll; Odds API if due
 python -m pipelines.ingest_odds --loop              # everything: poll, detect, compare, X search, sync
-python -m pipelines.ingest_odds --loop --no-odds-api   # same, saving Odds API credits
 python -m pipelines.detect_moves --hours 48         # write LINE_MOVES
 python -m pipelines.compare_venues --hours 48       # VENUE_GAPS + who moved first
 python -m pipelines.search_moves --hours 24         # X search around each new move
@@ -139,6 +138,8 @@ All X data comes from Grok's server-side `x_search` tool (`sources/xsearch.py`).
 
 **Sweeps** (`pipelines/sweep_insiders.py`) run every 15 minutes from 90 minutes before a kickoff until it, and hourly otherwise. Each covers the time since the last sweep. They search the national insiders plus beat reporters for teams playing in the next 36 hours.
 
+**Turning it off.** xAI bills per call. With `XAI_ENABLED=false` the loop makes no X searches; posts already stored stay in place.
+
 **Budget.** `XAI_DAILY_BUDGET_USD` caps estimated spend on move searches and sweeps. Sweeps stop at `XAI_SWEEP_BUDGET_SHARE` (80%) of it, so move searches always have room. One-off setup searches (`verify_handles`) don't count.
 
 **What probing the API turned up (Oct 2026):**
@@ -192,6 +193,7 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `ODDS_API_MIN_CREDITS` | `50` | stop calling below this |
 | `ODDS_API_LIVE_MIN_CREDITS` | `5000` | keep started games only above this |
 | `XAI_API_KEY`, `XAI_MODEL` | `grok-4.20-non-reasoning` | Grok x_search (milestone 4) |
+| `XAI_ENABLED` | `true` | `false` stops the ingest loop from making any X searches |
 | `XAI_MAX_HANDLES_PER_SEARCH` | `10` | handle batch size (11 verified to work) |
 | `XAI_PRICE_IN_PER_M`, `XAI_PRICE_OUT_PER_M`, `XAI_SEARCH_FEE_USD` | `1.25`, `2.5`, `0.005` | cost-estimate rates |
 | `XAI_DAILY_BUDGET_USD` | `2.0` | daily cap on move searches + sweeps |
@@ -207,7 +209,7 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 - **Kalshi:** free (public REST market data).
 - **Polymarket:** free (public Gamma + CLOB read APIs).
 - **nflverse:** free.
-- **The Odds API:** one `/odds` call for h2h + spreads + totals with ≤ 10 books costs 3 credits. The brief's schedule (every 30 min Mon–Sat, every 10 min Sunday 9 AM ET to the last kickoff) is about 380 calls a week, roughly **1,150 credits a week or 4,900 a month**. That fits the $30/month tier (20,000 credits) but not the free 500/month tier. Historical snapshots cost 10× (30 credits each), which matters for the backfill.
+- **The Odds API:** the default `paced` mode (`config/thresholds.yaml`) fits the free 500-credit tier. It polls at 10:00 and 18:00 ET, plus once when Kalshi or Polymarket detect a move (30-minute cooldown). It never makes more calls in a day than (credits left − `ODDS_API_MIN_CREDITS`) ÷ days left in the month ÷ 3, which is about 5 a day on a fresh month. `mode: interval` restores the brief's schedule. One `/odds` call for h2h + spreads + totals with ≤ 10 books costs 3 credits. The brief's schedule (every 30 min Mon–Sat, every 10 min Sunday 9 AM ET to the last kickoff) is about 380 calls a week, roughly **1,150 credits a week or 4,900 a month**. That fits the $30/month tier (20,000 credits) but not the free 500/month tier. Historical snapshots cost 10× (30 credits each), which matters for the backfill.
 - **Snowflake:** an X-Small warehouse uses 1 credit per running hour, billed per second after the first minute. `AUTO_SUSPEND = 60` plus the resource monitor (`SNOWFLAKE_CREDIT_CAP`) bound the spend. Cortex `AI_EMBED` and `AI_COMPLETE` are billed per token on top of that.
 - **xAI:** every call is logged with a cost estimate in `SEARCH_RUNS`. The estimate is tokens × price plus searches × fee, with env-tunable rates; check the Logs page on console.x.ai for exact charges. Measured on a Sunday morning: one 10-handle, 6-hour sweep batch cost $0.10–0.58 (the national insiders are the busiest). A full sweep of all 67 verified handles is about $1.20–1.50. The default $2/day cap therefore allows about one full sweep plus move searches; the brief's 15-minute/hourly schedule needs a larger budget or fewer handles per sweep.
 

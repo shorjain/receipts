@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo
 
 from common.log import get_logger
 from common.raw import write_raw
-from common.settings import env, env_float, env_int, thresholds
+from common.settings import env, env_bool, env_float, env_int, thresholds
 from sources import kalshi, odds_api, polymarket
 
 log = get_logger("ingest_odds")
@@ -112,12 +112,56 @@ def odds_api_interval(now_utc: datetime, games: list[dict]) -> int | None:
     return sched["weekday_minutes"]
 
 
-def odds_api_due(store, now: datetime, games: list[dict]) -> bool:
+def daily_allowance(remaining: float | None, now_utc: datetime, cost: int, floor: int) -> int:
+    """Calls allowed today so the month's credits last: (remaining - floor) spread over
+    the days left in the month (credits reset monthly; calendar month approximates it)."""
+    if remaining is None:
+        return 1  # first call ever: learn the balance from the response headers
+    now_et = now_utc.replace(tzinfo=timezone.utc).astimezone(ET)
+    nxt = (now_et.replace(day=28) + timedelta(days=4)).replace(day=1)
+    days_left = (nxt.date() - now_et.date()).days
+    return max(0, int((remaining - floor) / days_left // cost))
+
+
+def odds_api_reason(store, now: datetime, games: list[dict], cost: int, remaining: float | None) -> str | None:
+    """Why to poll The Odds API now (paced mode), or None."""
+    sched = thresholds()["odds_api_schedule"]
+    if not any(now < g["kickoff_at"] <= now + timedelta(days=8) for g in games):
+        return None
+    now_et = now.replace(tzinfo=timezone.utc).astimezone(ET)
+    midnight_et = now_et.replace(hour=0, minute=0, second=0, microsecond=0)
+    midnight_utc = midnight_et.astimezone(timezone.utc).replace(tzinfo=None)
+    allowed = daily_allowance(remaining, now, cost, env_int("ODDS_API_MIN_CREDITS", 50))
+    if store.api_calls_since("odds_api", midnight_utc) >= allowed:
+        return None
+    last = store.last_api_usage("odds_api")
+    last_at = last["called_at"] if last else None
+    for hhmm in sched.get("baseline_times_et", []):
+        h, m = map(int, hhmm.split(":"))
+        slot = midnight_et.replace(hour=h, minute=m).astimezone(timezone.utc).replace(tzinfo=None)
+        if slot <= now and (last_at is None or last_at < slot):
+            return f"baseline {hhmm} ET"
+    if sched.get("on_move") and (last_at is None or now - last_at >= timedelta(minutes=sched["on_move_cooldown_minutes"])):
+        since = last_at or now - timedelta(hours=6)
+        fresh = [m for m in store.line_moves(since, now) if m["window_end"] > since
+                 and any(v in (m["venues"] or "") for v in ("kalshi", "polymarket"))]
+        if fresh:
+            return f"move in {fresh[0]['game_id']}"
+    return None
+
+
+def odds_api_due(store, now: datetime, games: list[dict], cost: int = 3,
+                 remaining: float | None = None) -> str | None:
+    """Reason to poll now, or None. Mode comes from config/thresholds.yaml."""
+    if thresholds()["odds_api_schedule"].get("mode", "paced") == "paced":
+        return odds_api_reason(store, now, games, cost, remaining)
     interval = odds_api_interval(now, games)
     if interval is None:
-        return False
+        return None
     last = store.last_api_usage("odds_api")
-    return last is None or now - last["called_at"] >= timedelta(minutes=interval) - timedelta(seconds=30)
+    if last is None or now - last["called_at"] >= timedelta(minutes=interval) - timedelta(seconds=30):
+        return f"every {interval} min"
+    return None
 
 
 def poll_odds_api(store, client: odds_api.OddsApiClient, games: list[dict], now: datetime | None = None) -> int:
@@ -157,7 +201,10 @@ def run_once(store, force_odds_api: bool = False, pm_poller: PolymarketPoller | 
         return
     last = store.last_api_usage("odds_api")
     client.remaining = last["remaining"] if last else None
-    if force_odds_api or odds_api_due(store, now, games):
+    reason = "forced" if force_odds_api else odds_api_due(
+        store, now, games, client.estimated_cost(["h2h", "spreads", "totals"]), client.remaining)
+    if reason:
+        log.info("odds_api poll: %s", reason)
         try:
             poll_odds_api(store, client, games, now)
         except odds_api.CreditsExhausted as e:
@@ -188,7 +235,7 @@ def main() -> None:
         last_analysis = last_sync = 0.0
         can_sync = store.dialect == "duckdb" and bool(env("SNOWFLAKE_ACCOUNT")) and args.sync_every > 0
         x_client = None
-        if env("XAI_API_KEY") and not args.no_x:
+        if env("XAI_API_KEY") and env_bool("XAI_ENABLED", True) and not args.no_x:
             from sources.xsearch import XSearchClient
             x_client = XSearchClient()
         while True:

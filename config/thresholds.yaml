@@ -21,6 +21,15 @@ venues:
   reaction_after_minutes: 30    # keep looking this long after the window for laggards
 
 odds_api_schedule:
+  # paced: fits the free 500-credit tier. Baseline polls at fixed times plus one poll
+  #        when Kalshi/Polymarket detect a move, never more per day than the credits
+  #        left this month divided by the days left.
+  # interval: the brief's schedule (needs the $30 plan, ~4,900 credits/month).
+  mode: paced
+  baseline_times_et: ["10:00", "18:00"]
+  on_move: true
+  on_move_cooldown_minutes: 30
+  # interval mode only:
   weekday_minutes: 30           # Mon-Sat
   sunday_minutes: 10            # Sunday 9 AM ET until the last kickoff
   sunday_start_hour_et: 9

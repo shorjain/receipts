@@ -287,6 +287,11 @@ class SqlStore:
             "cost_units": cost_units, "remaining": remaining, "note": note,
         }])
 
+    def api_calls_since(self, source: str, since: datetime) -> int:
+        rows = self._query("SELECT COUNT(*) AS n FROM API_USAGE WHERE source = ? AND called_at >= ?",
+                           [source, utc_naive(since)])
+        return int(rows[0]["n"]) if rows else 0
+
     def last_api_usage(self, source: str) -> dict | None:
         rows = self._query(
             "SELECT * FROM API_USAGE WHERE source = ? ORDER BY called_at DESC LIMIT 1", [source])
