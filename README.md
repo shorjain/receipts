@@ -170,8 +170,9 @@ All X data comes from Grok's server-side `x_search` tool (`sources/xsearch.py`).
   - **attribution** = relevance × timing × `credibility_weight`, which is 0.5 until milestone 6 scores the insiders.
 - **No post before the move:** the move is marked "Unexplained: no insider news before this move", with no AI call. These are worth watching, since they may be sharp money or news from outside the tracked list.
 - **Otherwise:** a numbered evidence block (`[M1]` is the move with its numbers from SQL; `[P1]`… are the top 5 posts, each labeled with how many minutes before or AFTER the move it was posted) goes to `AI_COMPLETE` at temperature 0.
-- **Grounding guard** (`rag/guard.py`), applied to the reply:
-  - sentences with numbers not in the evidence are dropped;
+- **Grounding guard** (`rag/guard.py`, lined up with shipyard-rs's `enforce`), applied to the reply:
+  - bare references like "P2" become "[P2]";
+  - sentences with numbers not in the evidence are dropped. Matching is exact after normalizing $, commas, % and trailing zeros: 45% matches 45.0%, but 0.45 and 45.04 don't. Numbers from the user's question may be repeated back;
   - citations that aren't in the evidence are removed;
   - causal claims with no cited post are dropped;
   - posts published after the move can't be named as the cause;
@@ -270,7 +271,7 @@ Results (Oct 25 2026), where lower is better:
 1. **`parse.py`** turns the question into filters with plain rules, no model. It finds teams (nicknames, full names, cities; ambiguous abbreviations like NO or LA only in upper case), players (full name, or a last name only one rostered player has), insiders (handle, name, or a last name not already used by a player: "Lamar Jackson" doesn't pull in reporter Zac Jackson), claim types ("injury" → active / inactive / questionable / return date), a time window ("this morning", "yesterday", "on Friday", "week 7", "last 3 hours", "this season", ET-based) and an intent (moves, scoop, scores, predictions).
 2. **`retrieve.py`** filters with SQL through `store.ask_*`. In Snowflake, posts and moves are ranked by `VECTOR_COSINE_SIMILARITY` to the question. Questions about an insider's accuracy get stats for exactly the asked claim types and window, computed with `score_insiders`' formulas.
 3. **`answer.py`** builds a numbered evidence block (`[M#]` moves, `[P#]` posts, `[C#]` claims, `[S#]` insider stats, `[G#]` predictions) and calls `AI_COMPLETE` at temperature 0.
-4. **Grounding guard:** `rag/guard.py` with `require_citation`, so every sentence must cite evidence. It also drops numbers not in the evidence, strips unknown citations, and caps answers at 4 sentences. With no evidence it refuses without calling the model.
+4. **Grounding guard:** `rag/guard.py` with `require_citation`, so every sentence must cite evidence. As in shipyard-rs, the guard's removals are shown as warnings under the answer, and an answer about a move that cites no posts is flagged "explains no cause". "No evidence for X in that window" and "the draft didn't survive the checks" get separate messages, and the evidence is still shown either way. It also drops numbers not in the evidence, strips unknown citations, and caps answers at 4 sentences. With no evidence it refuses without calling the model.
 
 Asks read from Snowflake, which holds the embeddings, so data is up to one hourly sync old. `ASK_STORE=local` reads the local snapshot instead (fresher, ranked by recency) and still uses Cortex to write the answer. Available on the **Ask** page and as `GET /ask?q=`.
 
@@ -338,6 +339,7 @@ A move is any of the following within `lookback_minutes` (30), using pre-kickoff
 
 - Kalshi and Polymarket points count only when the yes bid-ask spread is under 4¢ (`*_MAX_SPREAD`) and 24h volume is at least `*_MIN_VOLUME`. Only their derived per-game series are compared, never single ladder rungs. Polymarket price history (backfill only) has no quotes, so it can confirm a move but not create one.
 - Overlapping windows for the same game, market type and **direction** merge across venues. A spike and its reversal stay two moves. A merged move is `multi` when two or more venues are in it.
+- Derived spread/total lines remember which ladder rungs they came from, and two points are only compared when their rung sets overlap by at least 50% (`min_rung_overlap`). This is shipyard-rs's strike-overlap check: when liquid rungs appear or vanish, the interpolated line can jump without the market moving. `magnitude_score` uses the same formula as shipyard-rs's shift score, the largest metric divided by its threshold.
 - Move IDs are stable across re-runs: a new window that overlaps an existing move reuses its ID and keeps its `explain_status`.
 - Kalshi and Polymarket snapshots are stored when the mid moves ≥ 0.5 pp, the derived line moves, or 10 minutes pass (a heartbeat, so the 30-minute lookback always has a reference point).
 

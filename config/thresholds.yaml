@@ -6,6 +6,7 @@ moves:
   total_points: 1.5             # total line change
   spread_min_change: 0.5        # a key-number touch needs at least this much spread movement
   spread_points: 1.0            # spread change that scores magnitude 1.0
+  min_rung_overlap: 0.5         # derived ladder lines: compare only points sharing >= half their rungs
   merge_gap_minutes: 0          # merge windows that overlap or are within this gap
   min_prob_change_to_store: 0.005   # skip storing Kalshi snapshots that moved less than 0.5 pp
 

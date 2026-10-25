@@ -11,7 +11,12 @@ KALSHI_MAX_SPREAD and 24h volume at least KALSHI_MIN_VOLUME). Overlapping window
 the same game, market type and direction merge across venues; a merged move is
 "multi" when two or more venues are in it.
 
-magnitude_score is the observed change divided by its threshold (1.0 = just met it):
+Derived spread/total lines are only compared with points built from mostly the same
+ladder rungs (Jaccard >= min_rung_overlap), so rungs appearing or vanishing can't fake
+a move (the same safeguard as shipyard-rs's strike_overlap).
+
+magnitude_score is the observed change divided by its threshold (1.0 = just met it),
+the largest across triggers, as shipyard-rs scores its shifts:
   winner |dp| / prob_points, total |dline| / total_points,
   spread max(|dline| / spread_points, 1.0 when a key number was crossed).
 
@@ -27,6 +32,7 @@ from datetime import datetime, timedelta, timezone
 from common import teams
 from common.log import get_logger
 from common.settings import env_float, thresholds
+from sources.ladder import rung_overlap
 
 log = get_logger("detect_moves")
 
@@ -41,6 +47,7 @@ class Point:
     bid: float | None = None
     ask: float | None = None
     volume: float | None = None
+    rungs: str | None = None
 
 
 @dataclass
@@ -113,8 +120,11 @@ def find_candidates(game_id: str, market_type: str, venue: str, points: list[Poi
     key = "prob" if market_type == "winner" else "line"
     pts = sorted((p for p in points if getattr(p, key) is not None), key=lambda p: p.t)
     out: list[Candidate] = []
+    min_overlap = cfg.get("min_rung_overlap", 0.5)
     for i, cur in enumerate(pts):
         window = [p for p in pts[:i] if cur.t - p.t <= look]
+        if market_type != "winner":  # ladder lines: only compare like with like
+            window = [p for p in window if (ov := rung_overlap(p.rungs, cur.rungs)) is None or ov >= min_overlap]
         if not window:
             continue
         ref = max(window, key=lambda p: abs(getattr(cur, key) - getattr(p, key)))
@@ -229,7 +239,7 @@ def build_series(snapshots: list[dict], games: dict[str, dict],
         if g and s["taken_at"] >= g["kickoff_at"]:
             continue  # in-game odds are not news-driven moves
         p = Point(s["taken_at"], s.get("implied_prob"), s.get("line"),
-                  s.get("bid"), s.get("ask"), s.get("volume"))
+                  s.get("bid"), s.get("ask"), s.get("volume"), s.get("rungs"))
         if venue in liquidity and not is_liquid(p, *liquidity[venue]):
             continue
         series.setdefault((s["game_id"], s["market_type"]), {}).setdefault(venue, []).append(p)

@@ -16,7 +16,7 @@ def test_grounded_answer_passes_untouched():
 def test_unsupported_number_drops_sentence():
     r = guard("The line moved 7 points [M1]. Schefter reported Stafford inactive [P1].", EVIDENCE, VALID, AFTER)
     assert r.kept == ["Schefter reported Stafford inactive [P1]."]
-    assert r.dropped[0][1].startswith("unsupported number 7")
+    assert r.dropped[0][1] == "unsupported number 7"
 
 
 def test_unknown_citations_are_stripped():
@@ -42,7 +42,7 @@ def test_at_most_three_sentences():
 
 
 def test_helpers():
-    assert numbers_in("rose 40.0% -> 45.0% (+5.0 pp) [P1] 49ers") == [40.0, 45.0, 5.0, 49.0]
+    assert numbers_in("rose 40.0% -> 45.0% (+5.0 pp) [P1] 49ers $1,250.50") == ["40", "45", "5", "49", "1250.5"]
     assert split_sentences("Line moved from 3.5 to 4.5 [M1]. Then [P1] said so.") == [
         "Line moved from 3.5 to 4.5 [M1].", "Then [P1] said so."]
 
@@ -51,3 +51,22 @@ def test_require_citation_drops_uncited_sentences():
     r = guard("Schefter reported Stafford inactive [P1]. Everyone knew already.", EVIDENCE, VALID, AFTER,
               require_citation=True)
     assert r.kept == ["Schefter reported Stafford inactive [P1]."] and r.dropped[0][1] == "no citation"
+
+
+def test_numbers_match_exactly_after_normalizing():
+    # 45% == 45.0%, but 45.04 is not 45.0 and 0.45 is not 45% (no converting or rounding)
+    assert guard("Up to 45% [M1].", EVIDENCE, VALID, AFTER).kept
+    assert not guard("Up to 45.04% [M1].", EVIDENCE, VALID, AFTER).kept
+    assert not guard("Up to 0.45 [M1].", EVIDENCE, VALID, AFTER).kept
+
+
+def test_numbers_from_the_question_may_be_echoed():
+    r = guard("Over the last 6 hours, Schefter reported it [P1].", EVIDENCE, VALID, AFTER,
+              extra_context="What happened in the last 6 hours?")
+    assert r.kept and not guard("Over the last 6 hours, Schefter reported it [P1].", EVIDENCE, VALID, AFTER).kept
+
+
+def test_bare_refs_are_bracketed_and_warnings_reported():
+    r = guard("Schefter reported Stafford inactive P1. Line moved 9 points [M1].", EVIDENCE, VALID, AFTER)
+    assert r.kept == ["Schefter reported Stafford inactive [P1]."]
+    assert r.warnings == ["removed a sentence with numbers not in the evidence: 9"]

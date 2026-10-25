@@ -1,5 +1,9 @@
 """Shared math for prediction-market venues (Kalshi, Polymarket): quotes, liquidity,
-and turning a ladder of binary markets into one implied line per game."""
+and turning a ladder of binary markets into one implied line per game.
+
+Derived lines carry the rungs they came from. Like shipyard-rs's strike_overlap check,
+detection won't compare two lines whose rung sets barely overlap: when liquid rungs
+appear or vanish, the interpolated line can jump without the market moving."""
 from __future__ import annotations
 
 
@@ -49,7 +53,7 @@ def derive(g: dict, mtype: str, items: list[tuple[dict, str]], max_spread: float
         return {"implied_prob": p, "price": home["price"], "line": None, "bid": home["bid"],
                 "ask": home["ask"], "volume": home["volume"]}
     liquid = [(q, s) for q, s in items if is_liquid(q, max_spread, min_volume)]
-    pts = []
+    pts, rungs = [], []
     for q, side in liquid:
         if q["strike"] is None or q["mid"] is None:
             continue
@@ -59,6 +63,9 @@ def derive(g: dict, mtype: str, items: list[tuple[dict, str]], max_spread: float
             pts.append((q["strike"], q["mid"]))          # P(home margin > s)
         elif side == g["away"]:
             pts.append((-q["strike"], 1 - q["mid"]))     # P(home margin > -s)
+        else:
+            continue
+        rungs.append(pts[-1][0])
     median = implied_median(pts)
     if median is None:
         return None
@@ -66,4 +73,13 @@ def derive(g: dict, mtype: str, items: list[tuple[dict, str]], max_spread: float
     near = min(liquid, key=lambda qs: abs((qs[0]["mid"] or 0) - 0.5))[0]
     line = round(median, 2) if mtype == "total" else round(-median, 2)
     return {"implied_prob": None, "price": None, "line": line, "bid": near["bid"],
-            "ask": near["ask"], "volume": sum(q["volume"] or 0 for q, _ in liquid)}
+            "ask": near["ask"], "volume": sum(q["volume"] or 0 for q, _ in liquid),
+            "rungs": ",".join(f"{x:g}" for x in sorted(rungs))}
+
+
+def rung_overlap(a: str | None, b: str | None) -> float | None:
+    """Jaccard overlap of two rung sets (as shipyard-rs's strike_overlap); None if unknown."""
+    if not a or not b:
+        return None
+    sa, sb = set(a.split(",")), set(b.split(","))
+    return len(sa & sb) / len(sa | sb)

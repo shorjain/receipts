@@ -46,6 +46,7 @@ def test_normalize_recorded_fixture(la_lv_game):
     # nflverse closed LV +3.0 / 48.5; the Kalshi ladder should land close to that.
     assert derived["kalshi:2026_07_LA_LV:spread"]["line"] == pytest.approx(3.0, abs=0.5)
     assert derived["kalshi:2026_07_LA_LV:total"]["line"] == pytest.approx(48.5, abs=1.0)
+    assert derived["kalshi:2026_07_LA_LV:spread"]["rungs"]                       # rung set recorded
     raw_rows = [s for s in snaps if s["source"] == "kalshi_rest"]
     assert len(raw_rows) == sum(len(v) for v in raw().values())
     assert all(m["game_id"] == "2026_07_LA_LV" for m in markets)

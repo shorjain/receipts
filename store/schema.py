@@ -29,6 +29,8 @@ TABLES: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
     "ODDS_SNAPSHOTS": ([
         ("market_id", STR), ("taken_at", TS), ("implied_prob", FLOAT), ("price", FLOAT),
         ("line", FLOAT), ("bid", FLOAT), ("ask", FLOAT), ("volume", FLOAT), ("source", STR),
+        # Derived spread/total lines: the ladder strikes they were interpolated from.
+        ("rungs", STR),
     ], ["market_id", "taken_at"]),
     "LINE_MOVES": ([
         ("move_id", STR), ("game_id", STR), ("market_type", STR), ("venue_scope", STR),

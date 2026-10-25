@@ -37,7 +37,7 @@ def ask(q: str) -> dict:
         a = answer(q, store, ai)
     finally:
         ai.close()
-    return {"question": a.question, "answer": a.text, "refused": a.refused,
+    return {"question": a.question, "answer": a.text, "refused": a.refused, "warnings": a.warnings,
             "evidence": [{"id": e["id"], "kind": e["kind"], "text": e["line"], "url": e.get("url")} for e in a.evidence]}
 
 

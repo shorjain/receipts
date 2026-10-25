@@ -44,9 +44,10 @@ UNEXPLAINED = "Unexplained: no insider news before this move."
 PROMPT = """You explain why an NFL betting line moved, using only the numbered evidence below.
 
 Rules:
-- Write at most three sentences.
-- Copy every number exactly from the evidence. Do not compute or round new numbers.
-- Every claim about a cause must cite the post it comes from, like [P1].
+- Write at most three sentences, plain prose, no lists or headings.
+- Copy numbers exactly as written in the evidence. Never compute, round, convert or estimate a number.
+- Write citations in square brackets right after the claim, exactly like [P1] or [M1][P2]. Never write "as seen in P1".
+- Every claim about a cause must cite the post it comes from.
 - Posts marked AFTER the move were reporting on it; describe them as reporting, never as the cause.
 - If no post plausibly explains the move, say the cause is unclear from tracked insiders.
 - Cite the move as [M1] when you state its numbers.

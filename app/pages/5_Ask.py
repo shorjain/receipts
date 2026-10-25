@@ -50,6 +50,8 @@ for a in reversed(st.session_state.history):
         st.write(a.question)
     with st.chat_message("assistant"):
         st.write(a.text)
+        for w in a.warnings:
+            st.caption(f"⚠️ {w}")
         q = a.query
         if q:
             bits = [f"teams {', '.join(q.teams)}" if q.teams else "", f"players {', '.join(p['full_name'] for p in q.players)}" if q.players else "",

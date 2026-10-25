@@ -22,13 +22,15 @@ from rag.parse import Query, parse
 from rag.retrieve import gather
 
 NO_DATA = "I don't have stored data that answers that."
+GUARD_FAILED = "The model's draft didn't survive the grounding checks. See the evidence below."
 
 PROMPT = """Answer the question about NFL betting lines and NFL insiders using only the numbered evidence.
 
 Rules:
-- At most four sentences, plain and direct.
-- Copy every number exactly from the evidence; don't compute new ones.
-- Cite the evidence for each fact, like [M1] or [P2]. Every claim about a cause needs a citation.
+- At most four sentences, plain prose, no lists or headings.
+- Write citations in square brackets right after the claim, exactly like [M1] or [P2][C3]. Never write "as seen in P2".
+- Copy numbers exactly as written in the evidence. Never compute, round, convert or estimate a number.
+- Every claim about a cause needs a citation.
 - A post published after a move reports on it; it didn't cause it.
 - If the evidence doesn't answer the question, say so instead of guessing.
 
@@ -48,6 +50,7 @@ class Answer:
     query: Query | None = None
     refused: bool = False
     dropped: list = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 def answer(question: str, store, ai, now: datetime | None = None, roster: list[dict] | None = None,
@@ -64,13 +67,20 @@ def answer(question: str, store, ai, now: datetime | None = None, roster: list[d
     q = parse(question, now, roster, insider_rows if insider_rows is not None else insiders(), season_start, week_ranges)
     items = gather(store, q, now, season_start)
     if not items:
-        return Answer(question, NO_DATA, [], q, refused=True)
+        scope = ", ".join(q.teams + [p["full_name"] for p in q.players] + ["@" + h for h in q.insiders]) or "that"
+        window = f" in {q.window_label}" if q.window_label else ""
+        return Answer(question, f"I don't have stored moves, posts, claims or predictions for {scope}{window}, so I "
+                                f"can't answer from evidence. I won't answer from general knowledge.", [], q, refused=True)
     evidence = "\n".join(f"[{it['id']}] {it['line']}" for it in items)
     reply = ai.complete(PROMPT.format(question=question, evidence=evidence), temperature=0)
     res = g.guard(reply.strip().strip('"'), evidence, {it["id"] for it in items}, set(), max_sentences=4,
-                  post_prefix=("P", "C", "M", "S", "G"), require_citation=True)
-    text = res.text if not res.refused else NO_DATA
-    return Answer(question, text, items, q, refused=res.refused, dropped=res.dropped)
+                  post_prefix=("P", "C", "M", "S", "G"), require_citation=True, extra_context=question)
+    warnings = list(res.warnings)
+    cited = set(g.CITE.findall(res.text))
+    if any(it["kind"] == "P" for it in items) and q.intent == "moves" and not any(c.startswith("P") for c in cited):
+        warnings.append("the answer cites no posts, so it explains no cause")
+    text = res.text if not res.refused else GUARD_FAILED
+    return Answer(question, text, items, q, refused=res.refused, dropped=res.dropped, warnings=warnings)
 
 
 def ask_backends():

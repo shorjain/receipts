@@ -91,11 +91,12 @@ def test_no_evidence_refuses_without_calling_the_model(store):
     seed(store)
     ai = FakeAI("unused")
     a = ans.answer("Why did the Cardinals line move last week?", store, ai, now=NOW, roster=ROSTER, insider_rows=INSIDERS)
-    assert a.refused and a.text == ans.NO_DATA and ai.prompts == []
+    assert a.refused and "can't answer from evidence" in a.text and "ARI" in a.text and ai.prompts == []
 
 
 def test_ungrounded_reply_becomes_a_refusal(store):
     seed(store)
     a = ans.answer("Who broke the Lamar Jackson news first?", store, FakeAI("Adam Schefter had it 3 hours earlier."),
                    now=NOW, roster=ROSTER, insider_rows=INSIDERS)
-    assert a.refused and a.text == ans.NO_DATA
+    assert a.refused and a.text == ans.GUARD_FAILED and a.evidence             # evidence still shown
+    assert a.warnings == ["removed a sentence that cited no evidence"]

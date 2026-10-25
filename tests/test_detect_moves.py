@@ -158,3 +158,11 @@ def test_polymarket_history_confirms_but_cannot_create_moves(cfg, la_lv_game):
            snap("kalshi", "winner", 12, prob=.45, source="kalshi_derived", bid=.44, ask=.46, volume=1e4)]
     rows = dm.detect(hist + kal, games, cfg, LIQ)
     assert len(rows) == 1 and rows[0]["venues"] == "kalshi,polymarket"
+
+
+def test_ladder_lines_with_different_rungs_are_not_compared(cfg):
+    a = dm.Point(T0, None, -2.5, rungs="1.5,2.5,3.5,4.5")
+    b = dm.Point(T0 + timedelta(minutes=10), None, -3.5, rungs="2.5,3.5,4.5,5.5")      # overlap 3/5
+    c = dm.Point(T0 + timedelta(minutes=10), None, -3.5, rungs="7.5,8.5,9.5")          # overlap 0
+    assert len(dm.find_candidates("g", "spread", "kalshi", [a, b], cfg)) == 1
+    assert dm.find_candidates("g", "spread", "kalshi", [a, c], cfg) == []
