@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import httpx
 
 from common.log import get_logger
+from common.notify import notify
 from common.raw import write_raw
 from common.settings import env_float
 from sources import xsearch
@@ -40,6 +41,28 @@ def budget_left(store, purpose: str, now: datetime | None = None) -> float:
     budget = env_float("XAI_DAILY_BUDGET_USD", 2.0)
     cap = budget * (env_float("XAI_SWEEP_BUDGET_SHARE", 0.8) if purpose == "sweep" else 1.0)
     return cap - spent_today(store, now)
+
+
+_notified: set[tuple[str, str]] = set()
+
+
+def check_spend_alerts(store, now: datetime | None = None, send=notify) -> list[str]:
+    """Notify once per day when estimated spend passes XAI_NOTIFY_USD, and when it
+    reaches the daily cap (searches pause until midnight UTC)."""
+    now = now or utcnow()
+    day, spent = f"{now:%Y-%m-%d}", spent_today(store, now)
+    budget, warn = env_float("XAI_DAILY_BUDGET_USD", 2.0), env_float("XAI_NOTIFY_USD", 2.0)
+    sent = []
+    if spent >= budget and (day, "cap") not in _notified:
+        _notified.add((day, "cap"))
+        sent.append("cap")
+        send("NFL Lines: X search paused", f"Today's xAI spend is ~${spent:.2f}, the ${budget:.2f} daily cap. "
+                                           "Searches resume at midnight UTC.")
+    elif spent >= warn and (day, "warn") not in _notified and warn < budget:
+        _notified.add((day, "warn"))
+        sent.append("warn")
+        send("NFL Lines: xAI spend", f"Today's X searches have cost ~${spent:.2f} (cap ${budget:.2f}/day).")
+    return sent
 
 
 def run_search(store, client, handles: list[str], start: datetime, end: datetime, purpose: str,
@@ -74,4 +97,5 @@ def run_search(store, client, handles: list[str], start: datetime, end: datetime
         log.info("%s search %s: %d posts kept, %d rejected, ~$%.3f%s", purpose, batch[:3] + (["..."] if len(batch) > 3 else []),
                  len(posts), len(rejected), res.cost_estimate_usd, f" ERROR {res.error}" if res.error else "")
         all_posts += posts
+        check_spend_alerts(store, now)
     return all_posts

@@ -141,6 +141,8 @@ All X data comes from Grok's server-side `x_search` tool (`sources/xsearch.py`).
 
 **Sweeps** (`pipelines/sweep_insiders.py`) run every 15 minutes from 90 minutes before a kickoff until it, and hourly otherwise. Each covers the time since the last sweep. They search the national insiders plus beat reporters for teams playing in the next 36 hours.
 
+**Alerts.** After every search the loop checks today's estimated spend. It sends a macOS notification once it passes `XAI_NOTIFY_USD`, and again when it reaches the cap and searches pause until midnight UTC.
+
 **Turning it off.** xAI bills per call. With `XAI_ENABLED=false` the loop makes no X searches; posts already stored stay in place.
 
 **Budget.** `XAI_DAILY_BUDGET_USD` caps estimated spend on move searches and sweeps. Sweeps stop at `XAI_SWEEP_BUDGET_SHARE` (80%) of it, so move searches always have room. One-off setup searches (`verify_handles`) don't count.
@@ -232,6 +234,7 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `XAI_PRICE_IN_PER_M`, `XAI_PRICE_OUT_PER_M`, `XAI_SEARCH_FEE_USD` | `1.25`, `2.5`, `0.005` | cost-estimate rates |
 | `XAI_DAILY_BUDGET_USD` | `2.0` | daily cap on move searches + sweeps |
 | `XAI_SWEEP_BUDGET_SHARE` | `0.8` | share of the cap sweeps may use |
+| `XAI_NOTIFY_USD` | `2.0` | Mac notification when today's spend passes this, and again at the cap |
 | `XAI_TIMEOUT_SECONDS` | `120` | per-call timeout |
 | `XAI_MOVE_COOLDOWN_MINUTES` | `15` | min gap between searches for one game |
 | `TRADING_ENABLED`, `DRY_RUN`, `KALSHI_ENV`, `MAX_ORDER_USD`, `MAX_DAILY_USD`, `MAX_OPEN_EXPOSURE_USD`, `KILL_SWITCH_FILE` | off / dry / demo | optional trading module |

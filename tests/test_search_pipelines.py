@@ -146,3 +146,19 @@ def test_without_x_client_moves_link_stored_posts(store, la_lv_game):
     assert search_moves.run(store, None, now=T0 + timedelta(hours=1)) == 1
     assert [r["lead_minutes"] for r in store.move_posts("m1")] == [8.0]
     assert store.search_runs() == []                      # nothing was searched or billed
+
+
+def test_spend_alerts_fire_once_per_threshold(store, monkeypatch):
+    monkeypatch.setenv("XAI_DAILY_BUDGET_USD", "5.0")
+    monkeypatch.setenv("XAI_NOTIFY_USD", "2.0")
+    search_x._notified.clear()
+    sent = []
+    send = lambda title, msg: sent.append(title)
+    store.insert_search_run({"run_id": "a", "purpose": "sweep", "cost_estimate_usd": 1.0, "ran_at": T0})
+    assert search_x.check_spend_alerts(store, T0, send) == []
+    store.insert_search_run({"run_id": "b", "purpose": "move", "cost_estimate_usd": 1.5, "ran_at": T0})
+    assert search_x.check_spend_alerts(store, T0, send) == ["warn"]
+    assert search_x.check_spend_alerts(store, T0, send) == []          # once per day
+    store.insert_search_run({"run_id": "c", "purpose": "sweep", "cost_estimate_usd": 3.0, "ran_at": T0})
+    assert search_x.check_spend_alerts(store, T0, send) == ["cap"]
+    assert sent == ["NFL Lines: xAI spend", "NFL Lines: X search paused"]
