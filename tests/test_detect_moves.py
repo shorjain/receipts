@@ -147,3 +147,14 @@ def test_assign_ids_reuses_overlapping_existing_move():
     assert out["move_id"] == "abc" and out["explain_status"] == "explained" and out["window_start"] == T0
     fresh = dm.assign_ids([row], [])[0]
     assert fresh["move_id"] == dm.move_id("g", "winner", T0) and fresh["explain_status"] == "pending"
+
+
+def test_polymarket_history_confirms_but_cannot_create_moves(cfg, la_lv_game):
+    games = {la_lv_game["game_id"]: la_lv_game}
+    hist = [snap("polymarket", "winner", 0, prob=.40, source="polymarket_history", bid=.395, ask=.405, volume=1e6),
+            snap("polymarket", "winner", 10, prob=.46, source="polymarket_history", bid=.455, ask=.465, volume=1e6)]
+    assert dm.detect(hist, games, cfg, LIQ) == []
+    kal = [snap("kalshi", "winner", 2, prob=.40, source="kalshi_derived", bid=.39, ask=.41, volume=1e4),
+           snap("kalshi", "winner", 12, prob=.45, source="kalshi_derived", bid=.44, ask=.46, volume=1e4)]
+    rows = dm.detect(hist + kal, games, cfg, LIQ)
+    assert len(rows) == 1 and rows[0]["venues"] == "kalshi,polymarket"

@@ -185,10 +185,14 @@ With X search off, moves link only to posts already stored. A replay of Saturday
 | Task | What it does | Cost |
 |---|---|---|
 | `kalshi:<game>` | 1-minute candles for both teams' winner markets, from market open (at most 14 days) to kickoff, fetched 3 days per call (Kalshi's limit is ~5,000 candles). Turned into the same normalized P(home win) series live polling stores, with the home market's bid/ask and rolling 24 h volume | free |
-| `poly:<game>` | Polymarket's minute price history for the moneyline. It has no bid/ask or volume, so it's treated as liquid | free |
+| `poly:<game>` | Polymarket's minute price history for the moneyline. It has no bid/ask or volume to check, so it's stored as `polymarket_history`, which can **confirm** a Kalshi move (making it multi-venue) but never creates a move alone | free |
 | `detect:<game>` | after both fetches: move detection and venue comparison for the game's pre-kickoff window, then one search task per new move | free |
 | `search:<move>` | X search around the past move (with `to_date` = the next day, which works for past windows), biggest and multi-venue moves first, while `BACKFILL_XAI_USD` (default $3) and the daily cap allow. After that, moves are linked to posts already stored. The loop's explain step then explains them, whatever their age | xAI, capped |
 | `oddsapi:<day>` | optional, `BACKFILL_ODDS_API_CREDITS` > 0: one historical snapshot per game day at noon ET | 30 credits each; off by default |
+
+Why confirm-only: the first backfill run treated that history as liquid and found 1,106 moves in 94 games, 1,015 of them Polymarket-only. Most were overnight spikes on thin books (for example 37.5% → 41% → 38% between 3 and 4 AM ET) that live polling would have filtered with real order books. A one-off migration in the loop relabeled that history, dropped the moves it created alone, and redid detection.
+
+Backfilled moves are all more than 24 hours before kickoff. That isn't missing data: prices run right up to kickoff, but by then the week's injury news is priced in. On Oct 25, live polling also saw no 3-point moves on that day's games between 3 AM and kickoff.
 
 The Odds API part is off by default because at 30 credits per snapshot the free tier buys about 15 snapshots a month. That's too few to detect book moves, and nflverse already provides closing lines for the model benchmark. Backfilled prices are stored like live ones: a point is kept when it moves ≥ 0.5 pp or 10 minutes pass.
 
@@ -247,7 +251,7 @@ A move is any of the following within `lookback_minutes` (30), using pre-kickoff
 | spread | line touches or passes 3, 7, 10 or 14, with ≥ 0.5 pts of movement | max(\|Δline\| / 1.0, 1.0) |
 | total | \|Δ total\| ≥ 1.5 | \|Δ\| / 1.5 |
 
-- Kalshi and Polymarket points count only when the yes bid-ask spread is under 4¢ (`*_MAX_SPREAD`) and 24h volume is at least `*_MIN_VOLUME`. Only their derived per-game series are compared, never single ladder rungs.
+- Kalshi and Polymarket points count only when the yes bid-ask spread is under 4¢ (`*_MAX_SPREAD`) and 24h volume is at least `*_MIN_VOLUME`. Only their derived per-game series are compared, never single ladder rungs. Polymarket price history (backfill only) has no quotes, so it can confirm a move but not create one.
 - Overlapping windows for the same game, market type and **direction** merge across venues. A spike and its reversal stay two moves. A merged move is `multi` when two or more venues are in it.
 - Move IDs are stable across re-runs: a new window that overlaps an existing move reuses its ID and keeps its `explain_status`.
 - Kalshi and Polymarket snapshots are stored when the mid moves ≥ 0.5 pp, the derived line moves, or 10 minutes pass (a heartbeat, so the 30-minute lookback always has a reference point).

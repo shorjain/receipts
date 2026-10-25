@@ -88,3 +88,27 @@ def test_backfill_xai_cap(store, monkeypatch):
     monkeypatch.setenv("BACKFILL_XAI_USD", "1.0")
     store.insert_search_run({"run_id": "r", "purpose": "backfill", "cost_estimate_usd": 1.2, "ran_at": KO})
     assert bf.backfill_xai_left(store, datetime(2026, 8, 1)) == pytest.approx(-0.2)
+
+
+def test_migration_drops_polymarket_only_moves_and_redoes_detection(store):
+    store.upsert_games([GAME])
+    store.upsert_markets([{"market_id": "polymarket:2026_07_DAL_GB:winner", "venue": "polymarket",
+                           "game_id": GAME["game_id"], "market_type": "winner", "side": "home"}])
+    store.insert_odds_snapshots([{"market_id": "polymarket:2026_07_DAL_GB:winner", "taken_at": KO - timedelta(hours=5),
+                                  "implied_prob": .4, "source": "polymarket_derived"}])
+    store.upsert_line_moves([
+        {"move_id": "poly", "game_id": GAME["game_id"], "venues": "polymarket", "window_start": KO - timedelta(days=2),
+         "window_end": KO - timedelta(days=2) + timedelta(minutes=30), "explain_status": "pending"},
+        {"move_id": "both", "game_id": GAME["game_id"], "venues": "kalshi,polymarket",
+         "window_start": KO - timedelta(days=1), "window_end": KO - timedelta(days=1) + timedelta(minutes=30),
+         "explain_status": "pending"}])
+    store.upsert_backfill_tasks([
+        {"task_id": "detect:2026_07_DAL_GB", "kind": "detect", "game_id": GAME["game_id"], "status": "done", "priority": 3},
+        {"task_id": "search:poly", "kind": "search", "game_id": GAME["game_id"], "status": "pending", "priority": 1}])
+    bf.migrate_v2(store, {GAME["game_id"]: GAME})
+    assert [m["move_id"] for m in store.line_moves()] == ["both"]
+    status = {t["task_id"]: t["status"] for t in store.backfill_tasks()}
+    assert status["detect:2026_07_DAL_GB"] == "pending" and status["search:poly"] == "obsolete"
+    assert store.odds_series(KO - timedelta(days=1), KO)[0]["source"] == "polymarket_history"
+    bf.migrate_v2(store, {GAME["game_id"]: GAME})          # runs once only
+    assert {t["task_id"]: t["status"] for t in store.backfill_tasks()}["detect:2026_07_DAL_GB"] == "pending"

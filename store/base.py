@@ -306,6 +306,21 @@ class SqlStore:
             sql += " AND score_window = ?"; params.append(score_window)
         return self._query(sql + " ORDER BY credibility_weight DESC", params)
 
+    def delete_moves(self, move_ids: Sequence[str]) -> int:
+        """Remove moves and their post links (local only: the Snowflake sync is upsert-only)."""
+        ids = list(move_ids)
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            marks = ", ".join("?" for _ in chunk)
+            self._execute(f"DELETE FROM MOVE_POSTS WHERE move_id IN ({marks})", chunk)
+            self._execute(f"DELETE FROM LINE_MOVES WHERE move_id IN ({marks})", chunk)
+        return len(ids)
+
+    def relabel_snapshots(self, market_id: str, before: datetime, source_from: str, source_to: str) -> None:
+        self._execute("UPDATE ODDS_SNAPSHOTS SET source = ?, updated_at = ? WHERE market_id = ? "
+                      "AND taken_at < ? AND source = ?",
+                      [source_to, utc_naive(datetime.now(timezone.utc)), market_id, utc_naive(before), source_from])
+
     # ---- BACKFILL_STATE ----------------------------------------------------
     def backfill_tasks(self, status: str | None = None, kind: str | None = None) -> list[dict]:
         sql, params = "SELECT * FROM BACKFILL_STATE WHERE 1=1", []

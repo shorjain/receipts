@@ -18,7 +18,10 @@ so stopping and restarting picks up where it left off.
                   nflverse already has closing lines)
 
 Stored like live data: a point is kept when it moves >= 0.5 pp or 10 minutes pass.
-Polymarket history has no bid/ask or volume, so it's treated as liquid (1-cent quote).
+Polymarket history has no bid/ask or volume, so it can't be liquidity-checked: it's
+stored as source "polymarket_history", which can confirm a Kalshi move (multi-venue)
+but can't create a move by itself. (A first run without that rule found 1,015
+Polymarket-only moves in 94 games, mostly overnight spikes on thin books.)
 
 Runs inside `ingest_odds --loop` in short slices (the loop is the only DuckDB writer),
 or on its own:  python -m pipelines.backfill [--seconds 0 for until done]
@@ -195,7 +198,7 @@ def fetch_poly(store, pc, task: dict, game: dict) -> int:
                            "market_type": "winner", "line": None, "side": "home", "source_ref": "derived"}])
     store.insert_odds_snapshots([{"market_id": mid, "taken_at": t, "implied_prob": p, "price": None, "line": None,
                                   "bid": round(p - 0.005, 4), "ask": round(p + 0.005, 4), "volume": 1e6,
-                                  "source": "polymarket_derived"} for t, p in kept])
+                                  "source": "polymarket_history"} for t, p in kept])
     return len(kept)
 
 
@@ -291,6 +294,35 @@ def _run_task(store, task: dict, game: dict | None, now: datetime) -> bool:
     return True
 
 
+MIGRATION_V2 = "migrate:poly-confirm-only"
+
+
+def migrate_v2(store, games: dict[str, dict]) -> None:
+    """One-off fix for backfills run before Polymarket history became confirm-only:
+    relabel that history, drop moves it created alone, and redo detection per game."""
+    if any(t["task_id"] == MIGRATION_V2 for t in store.backfill_tasks(kind="migrate")):
+        return
+    done_detect = [t for t in store.backfill_tasks(kind="detect") if t["status"] == "done"]
+    if done_detect:
+        drop = []
+        for t in done_detect:
+            g = games.get(t["game_id"])
+            if not g:
+                continue
+            store.relabel_snapshots(f"polymarket:{g['game_id']}:winner", g["kickoff_at"],
+                                    "polymarket_derived", "polymarket_history")
+            drop += [m["move_id"] for m in store.line_moves(game_id=g["game_id"])
+                     if m["window_start"] < g["kickoff_at"] and (m["venues"] or "") == "polymarket"]
+        store.delete_moves(drop)
+        store.upsert_backfill_tasks([{**t, "status": "pending", "note": "redo: polymarket confirm-only"}
+                                     for t in done_detect])
+        stale = [t for t in store.backfill_tasks(kind="search") if t["status"] == "pending"]
+        store.upsert_backfill_tasks([{**t, "status": "obsolete"} for t in stale])
+        log.info("backfill migration: dropped %d polymarket-only moves, redoing %d games", len(drop), len(done_detect))
+    store.upsert_backfill_tasks([{"task_id": MIGRATION_V2, "kind": "migrate", "status": "done", "priority": 0,
+                                  "detail": {}}])
+
+
 def step(store, seconds: float = 20, now: datetime | None = None, season: int | None = None) -> int:
     """Do backfill work for up to `seconds` (0 = until done). Returns tasks finished."""
     now = now or utcnow()
@@ -303,6 +335,7 @@ def step(store, seconds: float = 20, now: datetime | None = None, season: int | 
         plan(store, _client("kalshi"), _client("poly"), now, season)
     started, done = time.time(), 0
     games = {g["game_id"]: g for g in store.get_games(season)}
+    migrate_v2(store, games)
     progressed = True
     while progressed:  # tasks can queue new ones (detect -> search); keep going while time allows
         progressed = False

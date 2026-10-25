@@ -86,6 +86,9 @@ def crossed_keys(a: float, b: float, keys: list[int]) -> list[int]:
 # Prediction-market venues: only their derived per-game series count, and each point
 # must be liquid. Sportsbook venues have no bid/ask to check.
 EXCHANGE_VENUES = ("kalshi", "polymarket")
+# Sources without real quotes (Polymarket's price history, used by the backfill) can't be
+# liquidity-checked, so they may confirm another venue's move but never create one alone.
+CONFIRM_ONLY_SOURCES = ("polymarket_history",)
 
 
 def liquidity_rules() -> dict[str, tuple[float, float]]:
@@ -220,7 +223,7 @@ def build_series(snapshots: list[dict], games: dict[str, dict],
         venue = s["venue"]
         if venue not in DETECT_VENUES:
             continue
-        if venue in EXCHANGE_VENUES and not str(s.get("source", "")).endswith("_derived"):
+        if venue in EXCHANGE_VENUES and not str(s.get("source", "")).endswith(("_derived", "_history")):
             continue
         g = games.get(s["game_id"])
         if g and s["taken_at"] >= g["kickoff_at"]:
@@ -241,12 +244,16 @@ def detect(snapshots: list[dict], games: dict[str, dict], cfg: dict | None = Non
     """Pure detection: snapshot rows (joined with MARKETS) -> LINE_MOVES rows (no ids)."""
     cfg = cfg or _cfg()
     series = build_series(snapshots, games, liquidity)
+    confirm_only = {(s["game_id"], s["market_type"], s["venue"]) for s in snapshots
+                    if s.get("source") in CONFIRM_ONLY_SOURCES}
     rows = []
     for (gid, mtype), by_venue in series.items():
         cands = []
         for venue, pts in by_venue.items():
             cands += find_candidates(gid, mtype, venue, pts, cfg)
         for mv in merge_candidates(cands, cfg.get("merge_gap_minutes", 0)):
+            if all((gid, mtype, c.venue) in confirm_only for c in mv.candidates):
+                continue  # only an unverifiable price history moved
             rows.append(summarize(mv, by_venue, games.get(gid)))
     return rows
 
