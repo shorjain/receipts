@@ -1,0 +1,34 @@
+[
+ {
+  "_note": "Hand-built in the documented v4 /odds shape until scripts/probe_odds_api.py records a real one.",
+  "id": "evt_la_lv",
+  "sport_key": "americanfootball_nfl",
+  "commence_time": "2026-10-25T20:25:00Z",
+  "home_team": "Las Vegas Raiders",
+  "away_team": "Los Angeles Rams",
+  "bookmakers": [
+   {"key": "pinnacle", "title": "Pinnacle", "last_update": "2026-10-25T15:58:00Z", "markets": [
+     {"key": "h2h", "outcomes": [{"name": "Las Vegas Raiders", "price": 150}, {"name": "Los Angeles Rams", "price": -170}]},
+     {"key": "spreads", "outcomes": [{"name": "Las Vegas Raiders", "price": -105, "point": 3.0}, {"name": "Los Angeles Rams", "price": -105, "point": -3.0}]},
+     {"key": "totals", "outcomes": [{"name": "Over", "price": -110, "point": 48.5}, {"name": "Under", "price": -110, "point": 48.5}]}
+   ]},
+   {"key": "draftkings", "title": "DraftKings", "last_update": "2026-10-25T15:59:00Z", "markets": [
+     {"key": "h2h", "outcomes": [{"name": "Las Vegas Raiders", "price": 145}, {"name": "Los Angeles Rams", "price": -175}]},
+     {"key": "spreads", "outcomes": [{"name": "Las Vegas Raiders", "price": -110, "point": 3.5}, {"name": "Los Angeles Rams", "price": -110, "point": -3.5}]},
+     {"key": "totals", "outcomes": [{"name": "Over", "price": -112, "point": 48.0}, {"name": "Under", "price": -108, "point": 48.0}]}
+   ]},
+   {"key": "fanduel", "title": "FanDuel", "last_update": "2026-10-25T15:57:00Z", "markets": [
+     {"key": "h2h", "outcomes": [{"name": "Las Vegas Raiders", "price": 140}, {"name": "Los Angeles Rams", "price": -166}]},
+     {"key": "spreads", "outcomes": [{"name": "Las Vegas Raiders", "price": -112, "point": 3.0}, {"name": "Los Angeles Rams", "price": -108, "point": -3.0}]}
+   ]}
+  ]
+ },
+ {
+  "id": "evt_unknown",
+  "sport_key": "americanfootball_nfl",
+  "commence_time": "2026-10-25T17:00:00Z",
+  "home_team": "Nowhere Team",
+  "away_team": "Los Angeles Rams",
+  "bookmakers": []
+ }
+]
