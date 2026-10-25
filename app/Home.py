@@ -31,5 +31,6 @@ st.markdown("""
 - **Moves**: every detected line move with the insider posts that most likely caused it.
 - **Leaderboard**: insiders ranked by accuracy, speed and market impact.
 - **Insider**: one reporter's full receipt log, every claim with its outcome and evidence.
-- Games and Ask arrive in later milestones.
+- **Games**: the model's win probability next to the market's, with an honest report card.
+- Ask arrives in a later milestone.
 """)

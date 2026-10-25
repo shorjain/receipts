@@ -17,7 +17,7 @@ A personal NFL analytics app that answers two questions:
 | 5 | Move explanations + Moves page | done |
 | 6 | Claims, resolution, scores, Leaderboard + Insider pages | |
 | 7 | Season backfill | done (runs in the loop, resumable) |
-| 8 | Win-probability model + Games page | |
+| 8 | Win-probability model + Games page | done (doesn't beat the closing line yet; reported honestly) |
 | 9 | Ask chatbot | |
 | 10 | DuckDB fallback store (local embeddings + Ollama) | base tables done early; AI functions pending |
 | 11 | Trading module (optional, off) | |
@@ -51,6 +51,7 @@ python -m pipelines.extract_claims                  # claims from new posts (Cor
 python -m pipelines.resolve_claims                  # check claims against nflverse
 python -m pipelines.score_insiders                  # INSIDER_SCORES + credibility weights
 python -m pipelines.backfill --status               # season backfill progress (loop stopped)
+python -m pipelines.train_model                     # walk-forward report + predictions
 python -m pipelines.sync_snowflake                  # copy new local rows to Snowflake
 streamlit run app/Home.py                           # UI (reads data/ui_snapshot.duckdb)
 uvicorn api.main:app --reload                       # JSON API: /moves, /moves/{id}
@@ -229,6 +230,39 @@ Starter claims wait until the game is played. 2026 play-by-play participation is
 
 The **Leaderboard** page recomputes these with the same function for any filter (season, window, claim types, team) and awards badges: 🎯 Most accurate (≥ 5 resolved), ⚡ Fastest (largest median lead), 📈 Moves markets, 🔁 Mostly reposts (< 40% original, ≥ 5 claims). Every insider links to their **Insider** page: the full receipt log with each claim, its outcome, the evidence (table and value) and a link to the post.
 
+## Win-probability model
+
+`pipelines/train_model.py` retrains every 6 hours in the loop.
+
+**Features** are all known before kickoff, and each enters as home minus away:
+- rolling EPA per play over the last 4 and 8 games, offense and defense;
+- success rate and QB EPA per dropback over the last 8;
+- rest-day difference, the away team's travel distance, and a neutral-site flag;
+- injuries: snap share (from earlier weeks this season) of players listed Out or Doubtful, on offense and defense, plus a starting-QB-out flag.
+
+Rolling stats are computed over every scheduled game, so an upcoming game gets each team's latest form, and the current game is always excluded. Data comes from nflverse 2019–present; past seasons are cached as Parquet under `data/raw/model/`.
+
+**Models:** logistic regression and gradient boosting (scikit-learn).
+
+**Validation:** walk-forward by week over the last four seasons. Each week is predicted by a model fit only on games before it; a test checks that no training row is from the future. Benchmarks:
+- the **closing line**: nflverse's consensus closing moneylines with the vig removed. Pinnacle's close would need paid Odds API history, so this stands in;
+- **Kalshi's** P(home win) one hour before kickoff, for 2026 games with backfilled data.
+
+Results (Oct 25 2026), where lower is better:
+
+| Comparison | Games | Model log loss / Brier | Market |
+|---|---|---|---|
+| logreg vs closing line, 2023–26 | 952 | 0.646 / 0.228 | 0.613 / 0.213 |
+| gbm vs closing line | 952 | 0.665 / 0.236 | 0.613 / 0.213 |
+| logreg vs Kalshi, 2026 | 98 | 0.680 / 0.244 | Kalshi 0.661 / 0.233, close 0.661 / 0.233 |
+
+**The model doesn't beat the closing line**, as the brief expected for v1. Logistic regression beats gradient boosting, so it's the live model. A big gap between model and market more often means the model is missing news than that the market is wrong. Ideas for v2: a recent-credible-insider-news flag (from Feature B), QB-level ratings, and weather.
+
+**Games** page:
+- each upcoming game's model and market probability, flagged ⚠️ when they differ by ≥ `MODEL_DISAGREE_POINTS` (8 pts);
+- the five features that moved each prediction most (logistic-regression contributions);
+- the walk-forward report card and calibration chart, from `data/model/report.json`.
+
 ## UI and API
 
 DuckDB lets only one process open its file for writing, so the ingest loop writes a read-only copy, `data/ui_snapshot.duckdb`, every 5 minutes. The Streamlit pages (`app/`) and the FastAPI app (`api/main.py`) read that copy, so they never wake Snowflake.
@@ -296,6 +330,7 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `BACKFILL_ENABLED` | `true` | run season backfill slices in the loop |
 | `BACKFILL_XAI_USD` | `3.0` | total xAI spend for searching past moves |
 | `BACKFILL_ODDS_API_CREDITS` | `0` | credits for historical Odds API snapshots (30 each) |
+| `MODEL_DISAGREE_POINTS` | `0.08` | Games page flags model-vs-market gaps at least this big |
 | `RAW_DATA_DIR` | `data/raw` | Parquet copies |
 | `LOG_LEVEL` | `INFO` | |
 
@@ -329,7 +364,7 @@ pipelines/  load_nflverse, ingest_odds, detect_moves, compare_venues, search_mov
             sweep_insiders, search_x (shared runner), explain_moves, extract_claims,
             resolve_claims, score_insiders, sync_snowflake, run_all
 rag/        guard.py (grounding guard, shared with the Ask chatbot)
-app/        Streamlit: Home, Moves, Leaderboard, Insider
+app/        Streamlit: Home, Moves, Leaderboard, Insider, Games
 api/        FastAPI read-only endpoints
 scripts/    probe_*.py
 tests/      unit tests on recorded fixtures (no network)

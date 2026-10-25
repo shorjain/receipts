@@ -18,8 +18,9 @@ Run:  python -m pipelines.ingest_odds --once       one pass (Odds API only if du
                                                    --sync-every minutes (default 60) sync to
                                                    Snowflake and extract claims; every
                                                    --resolve-every minutes (default 360)
-                                                   refresh nflverse, resolve claims and
-                                                   rescore insiders. All in one process,
+                                                   refresh nflverse, resolve claims,
+                                                   rescore insiders and retrain the model.
+                                                   All in one process,
                                                    since DuckDB allows only one writer.
       python -m pipelines.ingest_odds --once --force-odds-api
 """
@@ -240,7 +241,8 @@ def main() -> None:
     if args.loop:
         period = env_int("KALSHI_POLL_SECONDS", 60)
         from pipelines import (backfill, compare_venues, detect_moves, explain_moves, extract_claims, load_nflverse,
-                               resolve_claims, score_insiders, search_moves, sweep_insiders, sync_snowflake)
+                               resolve_claims, score_insiders, search_moves, sweep_insiders, sync_snowflake,
+                               train_model)
         pm_poller = PolymarketPoller()
         last_analysis = last_sync = last_snapshot = last_resolve = 0.0
         can_sync = store.dialect == "duckdb" and bool(env("SNOWFLAKE_ACCOUNT")) and args.sync_every > 0
@@ -311,6 +313,10 @@ def main() -> None:
                     score_insiders.run(store, season)
                 except Exception as e:
                     log.error("claim resolution failed: %s", e)
+                try:  # retrain and refresh predictions for the next 8 days of games
+                    train_model.run(store)
+                except Exception as e:
+                    log.error("model training failed: %s", e)
                 last_resolve = started
             time.sleep(max(1, period - (time.time() - started)))
     else:

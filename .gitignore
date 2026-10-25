@@ -11,3 +11,4 @@ data/*.tmp
 *.pem
 .claude/
 data/demo.duckdb
+data/model/

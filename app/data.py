@@ -101,3 +101,19 @@ def badges(scores: pd.DataFrame) -> dict[str, list[str]]:
     for a in scores[(scores["n_claims"] >= 5) & (scores["original_ratio"] < 0.4)]["author"]:
         out.setdefault(a, []).append(f"{BADGES['Mostly reposts']} Mostly reposts")
     return out
+
+
+@st.cache_data(ttl=60)
+def predictions(suffix: str) -> pd.DataFrame:
+    s = store()
+    try:
+        return pd.DataFrame(s.predictions(suffix=suffix))
+    finally:
+        s.close()
+
+
+def model_report() -> dict | None:
+    import json
+    from common.settings import ROOT
+    p = ROOT / "data" / "model" / "report.json"
+    return json.loads(p.read_text()) if p.exists() else None

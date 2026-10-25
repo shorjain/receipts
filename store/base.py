@@ -321,6 +321,18 @@ class SqlStore:
                       "AND taken_at < ? AND source = ?",
                       [source_to, utc_naive(datetime.now(timezone.utc)), market_id, utc_naive(before), source_from])
 
+    # ---- PREDICTIONS ---------------------------------------------------------
+    def upsert_predictions(self, rows: Iterable[dict]) -> int:
+        return self.upsert("PREDICTIONS", rows)
+
+    def predictions(self, model_version: str | None = None, suffix: str | None = None) -> list[dict]:
+        sql, params = "SELECT * FROM PREDICTIONS WHERE 1=1", []
+        if model_version:
+            sql += " AND model_version = ?"; params.append(model_version)
+        if suffix:
+            sql += " AND model_version LIKE ?"; params.append(f"%{suffix}")
+        return self._query(sql + " ORDER BY made_at", params)
+
     # ---- BACKFILL_STATE ----------------------------------------------------
     def backfill_tasks(self, status: str | None = None, kind: str | None = None) -> list[dict]:
         sql, params = "SELECT * FROM BACKFILL_STATE WHERE 1=1", []
