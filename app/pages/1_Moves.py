@@ -87,7 +87,7 @@ for _, r in f.iterrows():
                     pr = alt.Chart(posts).mark_rule(strokeDash=[3, 3], color="gray").encode(
                         x="posted_at:T", tooltip=["author", "posted_at", "lead_minutes"])
                     layers.append(pr)
-                st.altair_chart(alt.layer(*layers).properties(height=180), use_container_width=True)
+                st.altair_chart(alt.layer(*layers).properties(height=180), width="stretch")
         with right:
             if posts.empty:
                 st.caption("No tracked-insider posts linked to this move.")

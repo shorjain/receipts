@@ -14,10 +14,13 @@ Run:  python -m pipelines.ingest_odds --once       one pass (Odds API only if du
                                                    minutes (default 10) also run
                                                    detect_moves and compare_venues, and
                                                    search X for new moves; run scheduled
-                                                   insider sweeps when due; and every
+                                                   insider sweeps when due; every
                                                    --sync-every minutes (default 60) sync to
-                                                   Snowflake. All in one process, since
-                                                   DuckDB allows only one writer.
+                                                   Snowflake and extract claims; every
+                                                   --resolve-every minutes (default 360)
+                                                   refresh nflverse, resolve claims and
+                                                   rescore insiders. All in one process,
+                                                   since DuckDB allows only one writer.
       python -m pipelines.ingest_odds --once --force-odds-api
 """
 from __future__ import annotations
@@ -221,6 +224,8 @@ def main() -> None:
                     help="minutes between detect_moves + compare_venues runs in --loop (0 = never)")
     ap.add_argument("--snapshot-every", type=float, default=5,
                     help="minutes between read-only snapshots for the UI/API (0 = never)")
+    ap.add_argument("--resolve-every", type=float, default=360,
+                    help="minutes between nflverse refresh + claim resolution + scoring (0 = never)")
     ap.add_argument("--no-odds-api", action="store_true",
                     help="don't poll The Odds API (e.g. to save free-tier credits)")
     ap.add_argument("--no-x", action="store_true", help="skip all X searches in --loop")
@@ -232,9 +237,10 @@ def main() -> None:
     store.create_schema()
     if args.loop:
         period = env_int("KALSHI_POLL_SECONDS", 60)
-        from pipelines import compare_venues, detect_moves, explain_moves, search_moves, sweep_insiders, sync_snowflake
+        from pipelines import (compare_venues, detect_moves, explain_moves, extract_claims, load_nflverse,
+                               resolve_claims, score_insiders, search_moves, sweep_insiders, sync_snowflake)
         pm_poller = PolymarketPoller()
-        last_analysis = last_sync = last_snapshot = 0.0
+        last_analysis = last_sync = last_snapshot = last_resolve = 0.0
         can_sync = store.dialect == "duckdb" and bool(env("SNOWFLAKE_ACCOUNT")) and args.sync_every > 0
         x_client = None
         if env("XAI_API_KEY") and env_bool("XAI_ENABLED", True) and not args.no_x:
@@ -277,7 +283,28 @@ def main() -> None:
                     sync_snowflake.run(store)
                 except Exception as e:  # Snowflake down must not stop local polling
                     log.error("snowflake sync failed: %s", e)
+                try:  # claims from new posts, while the warehouse is awake anyway
+                    if store.posts_needing_claims(1):
+                        ai = explain_moves.get_ai()
+                        if ai:
+                            try:
+                                extract_claims.run(store, ai)
+                            finally:
+                                ai.suspend_warehouse()
+                                ai.close()
+                except Exception as e:
+                    log.error("claim extraction failed: %s", e)
                 last_sync = started
+            if args.resolve_every and started - last_resolve >= args.resolve_every * 60:
+                try:  # refresh nflverse (scores, rosters), check claims, rescore insiders
+                    import nflreadpy
+                    season = nflreadpy.get_current_season()
+                    load_nflverse.run(store, season)
+                    resolve_claims.run(store, season)
+                    score_insiders.run(store, season)
+                except Exception as e:
+                    log.error("claim resolution failed: %s", e)
+                last_resolve = started
             time.sleep(max(1, period - (time.time() - started)))
     else:
         run_once(store, args.force_odds_api, use_odds_api=not args.no_odds_api)

@@ -269,6 +269,43 @@ class SqlStore:
                            "AND score_window = 'season' ORDER BY season DESC LIMIT 1", [author])
         return float(rows[0]["credibility_weight"]) if rows and rows[0]["credibility_weight"] is not None else None
 
+    # ---- CLAIMS / RESOLUTIONS / SCORES ------------------------------------
+    def posts_needing_claims(self, limit: int = 500) -> list[dict]:
+        return self._query("SELECT * FROM POSTS WHERE claims_checked_at IS NULL AND text IS NOT NULL "
+                           "ORDER BY posted_at LIMIT ?", [limit])
+
+    def mark_claims_checked(self, post_ids: Sequence[str], when: datetime) -> None:
+        self.upsert("POSTS", [{"post_id": p, "claims_checked_at": when} for p in post_ids])
+
+    def upsert_claims(self, rows: Iterable[dict]) -> int:
+        return self.upsert("CLAIMS", rows)
+
+    def claims(self, since: datetime | None = None, author: str | None = None) -> list[dict]:
+        """Claims joined with their resolution and post URL."""
+        sql = ("SELECT c.*, r.outcome, r.evidence, r.resolved_at, p.url, p.text AS post_text "
+               "FROM CLAIMS c LEFT JOIN CLAIM_RESOLUTIONS r ON r.claim_id = c.claim_id "
+               "LEFT JOIN POSTS p ON p.post_id = c.post_id WHERE 1=1")
+        params: list = []
+        if since is not None:
+            sql += " AND c.posted_at >= ?"; params.append(utc_naive(since))
+        if author:
+            sql += " AND c.author = ?"; params.append(author)
+        return self._query(sql + " ORDER BY c.posted_at", params)
+
+    def upsert_resolutions(self, rows: Iterable[dict]) -> int:
+        return self.upsert("CLAIM_RESOLUTIONS", rows)
+
+    def upsert_insider_scores(self, rows: Iterable[dict]) -> int:
+        return self.upsert("INSIDER_SCORES", rows)
+
+    def insider_scores(self, season: int | None = None, score_window: str | None = None) -> list[dict]:
+        sql, params = "SELECT * FROM INSIDER_SCORES WHERE 1=1", []
+        if season is not None:
+            sql += " AND season = ?"; params.append(season)
+        if score_window:
+            sql += " AND score_window = ?"; params.append(score_window)
+        return self._query(sql + " ORDER BY credibility_weight DESC", params)
+
     # ---- VENUE_GAPS --------------------------------------------------------
     def upsert_venue_gaps(self, rows: Iterable[dict]) -> int:
         return self.upsert("VENUE_GAPS", rows)

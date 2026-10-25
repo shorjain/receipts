@@ -142,6 +142,15 @@ class SnowflakeStore(SqlStore):
         by_i = {int(r["i"]): float(r["s"]) for r in rows}
         return [by_i.get(i, 0.0) for i in range(len(texts))]
 
+    def complete_json(self, prompt: str, schema: dict, model: str | None = None) -> dict:
+        """AI_COMPLETE with structured output: the reply is validated against `schema`."""
+        model = self._model_literal(model or env("SNOWFLAKE_EXTRACT_MODEL", env("SNOWFLAKE_COMPLETE_MODEL", "claude-sonnet-4-5")))
+        row = self._query(
+            f"SELECT AI_COMPLETE(model => {model}, prompt => ?, model_parameters => {{'temperature': 0}}, "
+            "response_format => PARSE_JSON(?)) AS r",
+            [prompt, json.dumps({"type": "json", "schema": schema})])[0]["r"]
+        return json.loads(row) if isinstance(row, str) else row
+
     def complete(self, prompt: str, temperature: float = 0.0) -> str:
         model = self._model_literal(env("SNOWFLAKE_COMPLETE_MODEL", "claude-sonnet-4-5"))
         row = self._query(

@@ -108,3 +108,11 @@ def load_trades(season: int, save: bool = True) -> pd.DataFrame:
     if save:
         write_raw("nflverse", df, name=f"trades_{season}")
     return df
+
+
+def load_players(save: bool = True) -> pd.DataFrame:
+    """All players with their cross-source IDs (gsis_id <-> pfr_id for snap counts)."""
+    df = _nfl().load_players().to_pandas()
+    if save:
+        write_raw("nflverse", df, name="players")
+    return df

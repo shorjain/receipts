@@ -29,5 +29,7 @@ c4.metric("Multi-venue", int((mv["venue_scope"] == "multi").sum()) if len(mv) el
 st.markdown("""
 **Pages**
 - **Moves**: every detected line move with the insider posts that most likely caused it.
-- Leaderboard, Insider, Games and Ask arrive in later milestones.
+- **Leaderboard**: insiders ranked by accuracy, speed and market impact.
+- **Insider**: one reporter's full receipt log, every claim with its outcome and evidence.
+- Games and Ask arrive in later milestones.
 """)

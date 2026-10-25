@@ -62,3 +62,42 @@ def series(game_id: str, market_type: str, start: datetime, end: datetime) -> pd
     key = "prob" if market_type == "winner" else "line"
     rows = [{"venue": v, "t": p.t, "value": getattr(p, key)} for v, pts in by_venue.items() for p in pts]
     return pd.DataFrame(rows)
+
+
+@st.cache_data(ttl=60)
+def claims() -> pd.DataFrame:
+    """Claims with missing text values as None, not NaN: NaN is truthy, which would make
+    every claim look like it credits someone."""
+    s = store()
+    try:
+        df = pd.DataFrame(s.claims())
+    finally:
+        s.close()
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].where(df[col].notna(), None)
+    return df
+
+
+def insider_meta() -> dict[str, dict]:
+    from common.settings import insiders
+    return {r["handle"]: r for r in insiders()}
+
+
+BADGES = {"Most accurate": "🎯", "Fastest": "⚡", "Moves markets": "📈", "Mostly reposts": "🔁"}
+
+
+def badges(scores: pd.DataFrame) -> dict[str, list[str]]:
+    """author -> badge labels. Minimum samples keep one lucky claim from earning a badge."""
+    out: dict[str, list[str]] = {}
+
+    def give(df, col, label, ascending=False):
+        if len(df):
+            a = df.sort_values(col, ascending=ascending).iloc[0]["author"]
+            out.setdefault(a, []).append(f"{BADGES[label]} {label}")
+    give(scores[scores["n_resolved"] >= 5], "accuracy", "Most accurate")
+    give(scores[scores["median_lead_minutes"].notna()], "median_lead_minutes", "Fastest")
+    give(scores[scores["market_impact"].notna() & (scores["market_impact"] > 0)], "market_impact", "Moves markets")
+    for a in scores[(scores["n_claims"] >= 5) & (scores["original_ratio"] < 0.4)]["author"]:
+        out.setdefault(a, []).append(f"{BADGES['Mostly reposts']} Mostly reposts")
+    return out

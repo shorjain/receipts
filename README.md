@@ -47,6 +47,9 @@ python -m pipelines.compare_venues --hours 48       # VENUE_GAPS + who moved fir
 python -m pipelines.search_moves --hours 24         # X search around each new move
 python -m pipelines.sweep_insiders [--force]        # scheduled insider sweep
 python -m pipelines.explain_moves --hours 24        # grounded explanations (Snowflake Cortex)
+python -m pipelines.extract_claims                  # claims from new posts (Cortex structured output)
+python -m pipelines.resolve_claims                  # check claims against nflverse
+python -m pipelines.score_insiders                  # INSIDER_SCORES + credibility weights
 python -m pipelines.sync_snowflake                  # copy new local rows to Snowflake
 streamlit run app/Home.py                           # UI (reads data/ui_snapshot.duckdb)
 uvicorn api.main:app --reload                       # JSON API: /moves, /moves/{id}
@@ -174,6 +177,39 @@ All X data comes from Grok's server-side `x_search` tool (`sources/xsearch.py`).
 
 With X search off, moves link only to posts already stored. A replay of Saturday Oct 24 showed one case clearly. The Ravens' win probability vs CIN fell 47.5% → 42.5% on both Kalshi and Polymarket, with Kalshi 8 minutes ahead. The tracked insiders' "Lamar Jackson ruled out" posts came 30 and 36 minutes after the move started. The market knew first, so the app marks the move unexplained and shows those posts as reporting on it.
 
+## Insider credibility
+
+**Claim extraction** (`pipelines/extract_claims.py`, hourly in the loop) sends new posts in batches of 15 to `AI_COMPLETE` with structured output. Each reply is a JSON list matching the CLAIMS schema: player, team, type, predicted value, hedging (confirmed / expected / rumor), who the post credits, and the quoted words.
+- **Player matching:** names are fuzzy-matched to nflverse IDs, first within the stated team (score ≥ 90). Failing that, across all rosters with a near-exact unique match (≥ 95), which catches a player named under his old team. Two players with the same name are never guessed; the claim is stored with `player_id` null.
+- **Game and deadline:** each claim gets the game it's about and a `resolve_by` time.
+- **Stories:** the same player, type and value within 6 hours is one story. The earliest post that doesn't credit anyone gets the scoop (`is_original`); later posts and posts that credit someone don't.
+
+**Resolution** (`pipelines/resolve_claims.py`, every 6 hours) checks claims against nflverse. Claims whose data hasn't arrived stay pending; after `resolve_by` + 7 days they become unresolvable.
+
+| Claim | Correct when |
+|---|---|
+| active / questionable_will_play | the player took a snap in that game (`snap_counts`, via the gsis → PFR ID crosswalk) |
+| inactive | the player took no snap |
+| starter | QBs: threw the team's first pass (`pbp`). Others: played ≥ 50% of the team's offensive or defensive snaps |
+| trade | the player's team changed in weekly rosters before `resolve_by` (to the named team, if one was named) |
+| signing | he appears on the named team |
+| release | he's cut or off the team |
+| return_date | the first week he records a snap equals the predicted week |
+| other, or no matched player | unresolvable, and doesn't count |
+
+Starter claims wait until the game is played. 2026 play-by-play participation isn't published, and depth charts lag injuries: a trial run marked a backup QB "incorrect" as the starter because the chart still listed the injured starter first. Hence the snap-share stand-in.
+
+**Scores** (`pipelines/score_insiders.py`), per author for the season and the last 4 weeks:
+
+- **accuracy** = (Σw·correct + 2) / (Σw + 4) over resolved claims. w = 0.5 for hedged claims and 2 for a confirmed miss. Raw hit rate and n are shown next to it.
+- **original_ratio** = claims that don't credit anyone ÷ all claims.
+- **scoop_rate** = of their own (uncredited) claims, the share where they were first among tracked accounts in the story. The brief's "is_original" and "first" overlap once later posters are marked unoriginal, so `original_ratio` counts uncredited claims and `scoop_rate` counts firsts.
+- **median_lead_minutes** = for their scoops, minutes until the next tracked account posted the same story.
+- **market_impact** = mean over their own claims about a game of |ΔP(home win) in the next 30 min| minus that game's typical 30-minute move over the prior 24 h (Kalshi, else Polymarket, else consensus).
+- **credibility_weight** (`credibility_weight()`, the one function to tune) = 0.60 accuracy + 0.15 scoop_rate + 0.15 min(1, market_impact / 2 pp) + 0.10 original_ratio. A missing signal counts as 0.5. The result is shrunk toward 0.5 by n_resolved / (n_resolved + 5), so new insiders start neutral. `explain_moves` uses it in attribution.
+
+The **Leaderboard** page recomputes these with the same function for any filter (season, window, claim types, team) and awards badges: 🎯 Most accurate (≥ 5 resolved), ⚡ Fastest (largest median lead), 📈 Moves markets, 🔁 Mostly reposts (< 40% original, ≥ 5 claims). Every insider links to their **Insider** page: the full receipt log with each claim, its outcome, the evidence (table and value) and a link to the post.
+
 ## UI and API
 
 DuckDB lets only one process open its file for writing, so the ingest loop writes a read-only copy, `data/ui_snapshot.duckdb`, every 5 minutes. The Streamlit pages (`app/`) and the FastAPI app (`api/main.py`) read that copy, so they never wake Snowflake.
@@ -268,7 +304,11 @@ store/      schema.py (tables), base.py (portable SQL), duckdb.py, snowflake.py
 sources/    kalshi.py, polymarket.py, ladder.py (shared exchange math), odds_api.py, nflverse.py,
             xsearch.py
 pipelines/  load_nflverse, ingest_odds, detect_moves, compare_venues, search_moves,
-            sweep_insiders, search_x (shared runner), sync_snowflake, run_all
+            sweep_insiders, search_x (shared runner), explain_moves, extract_claims,
+            resolve_claims, score_insiders, sync_snowflake, run_all
+rag/        guard.py (grounding guard, shared with the Ask chatbot)
+app/        Streamlit: Home, Moves, Leaderboard, Insider
+api/        FastAPI read-only endpoints
 scripts/    probe_*.py
 tests/      unit tests on recorded fixtures (no network)
 ```

@@ -53,6 +53,7 @@ TABLES: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
     "POSTS": ([
         ("post_id", STR), ("url", STR), ("author", STR), ("posted_at", TS),
         ("text", STR), ("text_source", STR), ("embedding", VEC),
+        ("claims_checked_at", TS),  # set once extract_claims has read the post
     ], ["post_id"]),
     "SEARCH_RUNS": ([
         ("run_id", STR), ("purpose", STR), ("window_start", TS), ("window_end", TS),
@@ -70,6 +71,9 @@ TABLES: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
         ("player_id", STR), ("player_name", STR), ("team", STR), ("claim_type", STR),
         ("predicted_value", STR), ("hedging", STR), ("is_original", BOOL),
         ("story_id", STR), ("resolve_by", TS),
+        # Not in the brief: who the post credited ("per @X"), the game the claim is about,
+        # the quoted claim text, and the excess odds move in the 30 min after it.
+        ("credited_handle", STR), ("game_id", STR), ("claim_text", STR), ("market_move", FLOAT),
     ], ["claim_id"]),
     "CLAIM_RESOLUTIONS": ([
         ("claim_id", STR), ("outcome", STR), ("evidence", JSON), ("resolved_at", TS),
