@@ -16,7 +16,8 @@ Run:  python -m pipelines.ingest_odds --once       one pass (Odds API only if du
                                                    search X for new moves; run scheduled
                                                    insider sweeps when due; every
                                                    --sync-every minutes (default 60) sync to
-                                                   Snowflake and extract claims; every
+                                                   Snowflake; every --claims-every minutes
+                                                   (default 60) extract claims; every
                                                    --resolve-every minutes (default 360)
                                                    refresh nflverse, resolve claims,
                                                    rescore insiders and retrain the model.
@@ -227,6 +228,8 @@ def main() -> None:
                     help="minutes between read-only snapshots for the UI/API (0 = never)")
     ap.add_argument("--backfill-seconds", type=float, default=20,
                     help="seconds of season backfill per loop iteration (0 = off)")
+    ap.add_argument("--claims-every", type=float, default=60,
+                    help="minutes between claim extraction runs (0 = every iteration)")
     ap.add_argument("--resolve-every", type=float, default=360,
                     help="minutes between nflverse refresh + claim resolution + scoring (0 = never)")
     ap.add_argument("--no-odds-api", action="store_true",
@@ -244,7 +247,7 @@ def main() -> None:
                                resolve_claims, score_insiders, search_moves, sweep_insiders, sync_snowflake,
                                train_model)
         pm_poller = PolymarketPoller()
-        last_analysis = last_sync = last_snapshot = last_resolve = 0.0
+        last_analysis = last_sync = last_snapshot = last_resolve = last_claims = 0.0
         can_sync = store.dialect == "duckdb" and bool(env("SNOWFLAKE_ACCOUNT")) and args.sync_every > 0
         x_client = None
         if env("XAI_API_KEY") and env_bool("XAI_ENABLED", True) and not args.no_x:
@@ -258,6 +261,9 @@ def main() -> None:
                     detect_moves.run(store, hours=24)
                     compare_venues.run(store, hours=24)
                     search_moves.run(store, x_client, hours=24)  # x_client None: stored posts only
+                    if explain_moves.ai_backend() == "local" and store.dialect == "duckdb":
+                        store.embed_missing("POSTS", "text")             # local vectors for Ask
+                        store.embed_missing("LINE_MOVES", "summary_text")
                     # any age: backfilled moves get explained too
                     if store.line_moves(explain_status="searched"):
                         ai = explain_moves.get_ai()  # Snowflake Cortex; woken only when needed
@@ -292,7 +298,9 @@ def main() -> None:
                     sync_snowflake.run(store)
                 except Exception as e:  # Snowflake down must not stop local polling
                     log.error("snowflake sync failed: %s", e)
-                try:  # claims from new posts, while the warehouse is awake anyway
+                last_sync = started
+            if started - last_claims >= args.claims_every * 60:
+                try:  # claims from new posts (Snowflake Cortex or the local LLM)
                     if store.posts_needing_claims(1):
                         ai = explain_moves.get_ai()
                         if ai:
@@ -303,7 +311,7 @@ def main() -> None:
                                 ai.close()
                 except Exception as e:
                     log.error("claim extraction failed: %s", e)
-                last_sync = started
+                last_claims = started
             if args.resolve_every and started - last_resolve >= args.resolve_every * 60:
                 try:  # refresh nflverse (scores, rosters), check claims, rescore insiders
                     import nflreadpy

@@ -74,15 +74,20 @@ def answer(question: str, store, ai, now: datetime | None = None, roster: list[d
 
 
 def ask_backends():
-    """(store, ai) for Ask. Snowflake holds the embeddings for vector ranking (data is up
-    to one sync old); ASK_STORE=local retrieves from the loop's fresher local snapshot
-    instead (recency ranking) and still uses Snowflake Cortex to write the answer."""
+    """(store, ai) for Ask.
+
+    AI_BACKEND=snowflake: retrieval in Snowflake, which holds the Cortex embeddings
+      (data up to one sync old); ASK_STORE=local retrieves from the loop's fresher local
+      snapshot instead (recency ranking) and still writes the answer with Cortex.
+    AI_BACKEND=local: retrieval from the local snapshot with local vectors, answer from
+      Ollama. Nothing leaves the machine."""
     from common.settings import env
-    from pipelines.explain_moves import get_ai
+    from pipelines.explain_moves import ai_backend, get_ai
+    from store import get_read_store
     ai = get_ai()
     if ai is None:
-        raise RuntimeError("Ask needs Snowflake Cortex: set SNOWFLAKE_ACCOUNT in .env")
-    if env("ASK_STORE", "snowflake") == "local":
-        from store import get_read_store
+        raise RuntimeError("Ask needs an AI backend: Snowflake (SNOWFLAKE_ACCOUNT) or local "
+                           "(AI_BACKEND=local with `ollama serve` running)")
+    if ai_backend() == "local" or env("ASK_STORE", "snowflake") == "local":
         return get_read_store(), ai
     return ai, ai

@@ -2,8 +2,9 @@
 
 For each move with explain_status "searched":
   1. Score every linked post (MOVE_POSTS):
-       relevance   = embedding similarity to the move's summary_text, rescaled from
-                     [SIM_FLOOR, SIM_CEILING] to [0, 1], plus TEAM_BONUS when the post
+       relevance   = embedding similarity to the move's summary_text, rescaled from the
+                     backend's typical range (Snowflake arctic-embed 0.65-0.90, local
+                     mpnet 0.15-0.75) to [0, 1], plus TEAM_BONUS when the post
                      names either team or a player on either roster (capped at 1)
        timing      = timing_weight(lead_minutes): 1.0 for posts 0-20 min before the
                      move, falling linearly to 0 at 60 min before, and 0.3 x e^(lead/10)
@@ -64,8 +65,10 @@ def timing_weight(lead_minutes: float) -> float:
     return max(0.0, 1 - (lead_minutes - 20) / 40)
 
 
-def relevance(similarity: float, names_team_or_player: bool) -> float:
-    base = min(1.0, max(0.0, (similarity - SIM_FLOOR) / (SIM_CEILING - SIM_FLOOR)))
+def relevance(similarity: float, names_team_or_player: bool,
+              sim_range: tuple[float, float] = (SIM_FLOOR, SIM_CEILING)) -> float:
+    lo, hi = sim_range
+    base = min(1.0, max(0.0, (similarity - lo) / (hi - lo)))
     return round(min(1.0, base + (TEAM_BONUS if names_team_or_player else 0.0)), 4)
 
 
@@ -116,7 +119,8 @@ def explain(store, ai, move: dict, game: dict | None, player_names: list[str]) -
     sims = ai.similarities(move["summary_text"], [l["text"] or "" for l in links])
     scored = []
     for l, sim in zip(links, sims):
-        rel = relevance(sim, mentions(l["text"], game, player_names))
+        rel = relevance(sim, mentions(l["text"], game, player_names),
+                        getattr(ai, "sim_range", (SIM_FLOOR, SIM_CEILING)))
         att = attribution(rel, l["lead_minutes"], credibility(store, l["author"]))
         scored.append({**l, "relevance": rel, "attribution_score": att})
     store.upsert_move_posts([{"move_id": move["move_id"], "post_id": s["post_id"],
@@ -156,9 +160,24 @@ def run(store, ai, hours: float = 24, now: datetime | None = None) -> int:
     return len(updates)
 
 
-def get_ai():
-    """Snowflake Cortex when configured, else None (explanations wait)."""
+def ai_backend() -> str:
+    """AI_BACKEND=snowflake | local; by default Snowflake when an account is configured."""
     from common.settings import env
+    choice = (env("AI_BACKEND") or ("snowflake" if env("SNOWFLAKE_ACCOUNT") else "local")).lower()
+    return choice if choice in ("snowflake", "local") else "snowflake"
+
+
+def get_ai():
+    """Snowflake Cortex or the local stand-ins (sentence-transformers + Ollama).
+    None when the chosen backend isn't reachable; AI steps then wait."""
+    from common.settings import env
+    if ai_backend() == "local":
+        from common.local_ai import LocalAI
+        ai = LocalAI()
+        if not ai.available():
+            log.warning("local AI unavailable: start `ollama serve` and `ollama pull %s`", ai.llm_model)
+            return None
+        return ai
     if not env("SNOWFLAKE_ACCOUNT"):
         return None
     from store.snowflake import SnowflakeStore

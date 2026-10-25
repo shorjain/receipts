@@ -19,3 +19,5 @@ uvicorn>=0.30
 streamlit>=1.38
 # tests
 pytest>=8
+# local AI fallback (milestone 10)
+sentence-transformers>=3

@@ -35,6 +35,7 @@ def _connect_kwargs() -> dict:
 
 class SnowflakeStore(SqlStore):
     dialect = "snowflake"
+    sim_range = (0.65, 0.90)   # typical AI_EMBED cosine range: unrelated .. closely related
     TYPE_MAP = {
         "STR": "VARCHAR", "INT": "NUMBER(38,0)", "FLOAT": "FLOAT", "BOOL": "BOOLEAN",
         "TS": "TIMESTAMP_NTZ", "JSON": "VARIANT", "VEC": f"VECTOR(FLOAT, {EMBED_DIM})",

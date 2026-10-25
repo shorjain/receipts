@@ -19,7 +19,7 @@ A personal NFL analytics app that answers two questions:
 | 7 | Season backfill | done (runs in the loop, resumable) |
 | 8 | Win-probability model + Games page | done (doesn't beat the closing line yet; reported honestly) |
 | 9 | Ask chatbot | done |
-| 10 | DuckDB fallback store (local embeddings + Ollama) | base tables done early; AI functions pending |
+| 10 | DuckDB fallback store (local embeddings + Ollama) | done |
 | 11 | Trading module (optional, off) | |
 
 ## Setup
@@ -279,6 +279,41 @@ Examples from Oct 25 2026:
 - "How accurate has Zrebiec been on injury calls this season?" → 11 injury claims, none resolved yet, so the smoothed 0.50 is a placeholder.
 - "Why did the Bills line drop this morning?" → says the stored data doesn't show a Bills move this morning.
 
+## After the Snowflake trial: running fully local
+
+Snowflake was never the only copy. Every row is written to local DuckDB first and synced up, and raw pulls are also in `data/raw/` as Parquet. Only the Cortex AI functions need replacing, and `AI_BACKEND=local` swaps them:
+
+| Snowflake | Local replacement |
+|---|---|
+| `AI_EMBED` (arctic-embed-m, 768-d) | sentence-transformers `all-mpnet-base-v2`, also 768-d, so the vector columns don't change |
+| `VECTOR_COSINE_SIMILARITY` | DuckDB `array_cosine_similarity` |
+| `AI_COMPLETE` (+ structured output) | Ollama `/api/generate` at temperature 0; the JSON schema goes in Ollama's `format` |
+
+Switching over when the trial ends:
+
+1. Install and start Ollama, then pull the model:
+   ```bash
+   brew install ollama
+   ```
+   ```bash
+   ollama serve
+   ```
+   ```bash
+   ollama pull qwen2.5:3b
+   ```
+   That's about 1.9 GB. `qwen2.5:7b` (4.7 GB) writes better explanations and extracts claims more reliably, and also fits a 16 GB Apple-silicon Mac; set `OLLAMA_MODEL` to switch.
+2. In `.env`: set `AI_BACKEND=local` and clear `SNOWFLAKE_ACCOUNT`. That stops the sync, which can't reach a closed account anyway.
+3. Restart the loop. It embeds stored posts and move summaries locally (500 rows per 10-minute pass), and claim extraction, explanations and Ask switch to Ollama.
+
+A local check on Oct 25 2026 (M4 MacBook Air, 16 GB, `qwen2.5:3b`):
+- 1,028 posts embedded in 12 s;
+- claim extraction: 4 claims from 15 posts in 6 s;
+- one move explanation and one Ask answer: about 5 s each.
+
+The 3B model follows the citation rules, but it reasons less carefully than Claude on Cortex. Asked "Who broke the Lamar Jackson news first?", it named Hensley, when the claims evidence shows Zrebiec 6 minutes earlier. The guard checks citations and numbers, not whether the evidence was read correctly. Use `qwen2.5:7b` or larger when quality matters.
+
+The local and Snowflake embedding models score similarity on different scales, so each backend carries its own range for rescaling relevance (Snowflake 0.65–0.90, local 0.15–0.75). If Ollama isn't running, the AI steps wait and log how to start it; polling, detection, resolution and scoring keep going.
+
 ## UI and API
 
 DuckDB lets only one process open its file for writing, so the ingest loop writes a read-only copy, `data/ui_snapshot.duckdb`, every 5 minutes. The Streamlit pages (`app/`) and the FastAPI app (`api/main.py`) read that copy, so they never wake Snowflake.
@@ -347,6 +382,9 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `BACKFILL_XAI_USD` | `3.0` | total xAI spend for searching past moves |
 | `BACKFILL_ODDS_API_CREDITS` | `0` | credits for historical Odds API snapshots (30 each) |
 | `MODEL_DISAGREE_POINTS` | `0.08` | Games page flags model-vs-market gaps at least this big |
+| `AI_BACKEND` | (auto) | `snowflake` or `local`; empty = snowflake when `SNOWFLAKE_ACCOUNT` is set |
+| `LOCAL_EMBED_MODEL` | `sentence-transformers/all-mpnet-base-v2` | local embeddings |
+| `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_SECONDS` | `http://localhost:11434`, `qwen2.5:3b`, `300` | local LLM |
 | `ASK_STORE` | `snowflake` | where Ask retrieves from: `snowflake` (vector ranking) or `local` (fresher snapshot) |
 | `RAW_DATA_DIR` | `data/raw` | Parquet copies |
 | `LOG_LEVEL` | `INFO` | |

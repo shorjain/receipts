@@ -34,6 +34,38 @@ class DuckDBStore(SqlStore):
         cols = [d[0].lower() for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
+    # ---- local vector search (AI_BACKEND=local) -----------------------------------
+    def _local_ai(self):
+        from pipelines.explain_moves import ai_backend
+        if ai_backend() != "local":
+            return None
+        if not hasattr(self, "_ai"):
+            from common.local_ai import LocalAI
+            self._ai = LocalAI()
+        return self._ai
+
+    def _similarity_sql(self, query: str | None) -> tuple[str, list] | None:
+        ai = self._local_ai() if query else None
+        if ai is None:
+            return None
+        vec = ai.embed_texts([query])[0]
+        return f"array_cosine_similarity(embedding, CAST(? AS FLOAT[{EMBED_DIM}]))", [vec]
+
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        from common.local_ai import LocalAI
+        return (self._local_ai() or LocalAI()).embed_texts(texts)
+
+    def embed_missing(self, table: str, text_col: str, limit: int = 500) -> int:
+        """Fill NULL embeddings locally (posts, move summaries) when Snowflake isn't used."""
+        key = {"POSTS": "post_id", "LINE_MOVES": "move_id"}[table]
+        rows = self._query(f"SELECT {key}, {text_col} AS t FROM {table} WHERE embedding IS NULL "
+                           f"AND {text_col} IS NOT NULL AND {text_col} <> '' LIMIT ?", [limit])
+        if not rows:
+            return 0
+        vecs = self.embed_texts([r["t"] for r in rows])
+        self.upsert(table, [{key: r[key], "embedding": v} for r, v in zip(rows, vecs)])
+        return len(rows)
+
     def _cast_from_text(self, expr: str, col_type: str) -> str:
         if col_type == VEC:
             return f"CAST({expr} AS FLOAT[{EMBED_DIM}])"
