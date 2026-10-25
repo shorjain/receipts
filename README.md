@@ -13,7 +13,7 @@ A personal NFL analytics app that answers two questions:
 | 2 | nflverse loaders; GAMES + ROSTERS for the current season | done |
 | 3 | Odds ingestion (Kalshi + The Odds API) and move detection | done (Odds API path tested on a hand-built fixture until a key is added) |
 | 3b | Polymarket venue + Kalshi vs Polymarket gaps and lead-lag | done |
-| 4 | X sweeps + on-move searches with citation verification | next: needs `XAI_API_KEY` |
+| 4 | X sweeps + on-move searches with citation verification | done (embeddings run in Snowflake after each sync) |
 | 5 | Move explanations + Moves page | |
 | 6 | Claims, resolution, scores, Leaderboard + Insider pages | |
 | 7 | Season backfill | |
@@ -41,9 +41,13 @@ Individual stages:
 ```bash
 python -m pipelines.load_nflverse --season 2026     # GAMES + ROSTERS
 python -m pipelines.ingest_odds --once              # one Kalshi poll; Odds API if due
-python -m pipelines.ingest_odds --loop              # keep polling (Kalshi every 60 s)
+python -m pipelines.ingest_odds --loop              # everything: poll, detect, compare, X search, sync
+python -m pipelines.ingest_odds --loop --no-odds-api   # same, saving Odds API credits
 python -m pipelines.detect_moves --hours 48         # write LINE_MOVES
 python -m pipelines.compare_venues --hours 48       # VENUE_GAPS + who moved first
+python -m pipelines.search_moves --hours 24         # X search around each new move
+python -m pipelines.sweep_insiders [--force]        # scheduled insider sweep
+python -m pipelines.sync_snowflake                  # copy new local rows to Snowflake
 ```
 
 Probe scripts hit each API once and save a fixture to `tests/fixtures/`:
@@ -54,6 +58,8 @@ python -m scripts.probe_nflverse     # public
 python -m scripts.probe_polymarket   # public, read-only (needs GAMES loaded)
 python -m scripts.probe_odds_api     # needs ODDS_API_KEY, costs ~3 credits
 python -m scripts.probe_snowflake --guardrails   # needs Snowflake creds + ACCOUNTADMIN
+python -m scripts.probe_xsearch      # needs XAI_API_KEY, ~$0.15
+python -m scripts.verify_handles [--find]        # check / correct handles in insiders.yaml
 ```
 
 ## Snowflake setup
@@ -72,7 +78,9 @@ Cortex functions take the model name as a SQL literal, not a bind parameter; `st
 
 ## Store
 
-`STORE_BACKEND=duckdb` (default) writes to `data/nfl_lines.duckdb` with no account. `STORE_BACKEND=snowflake` uses Snowflake. Both implement the same interface (`store/base.py`). All SQL lives in `store/`; `tests/test_repo_rules.py` fails if SQL shows up anywhere else.
+`STORE_BACKEND=duckdb` (default) writes to `data/nfl_lines.duckdb` with no account. `STORE_BACKEND=snowflake` uses Snowflake.
+
+**How the two are used together.** Minute-by-minute polling writes to local DuckDB. A warehouse woken every minute would never suspend, which is about 24 credits a day. Once an hour the loop runs `pipelines/sync_snowflake.py`. Every upsert stamps `updated_at`, so the sync copies only rows changed since the last run. It then fills missing `POSTS` and `LINE_MOVES` embeddings server-side with `AI_EMBED` (embedding columns are never copied from DuckDB) and suspends the warehouse immediately instead of idling 60 s. The first sync (46K rows) took 31 s; hourly ones take seconds. Both implement the same interface (`store/base.py`). All SQL lives in `store/`; `tests/test_repo_rules.py` fails if SQL shows up anywhere else.
 
 - Table definitions live once in `store/schema.py` in neutral types; each backend maps them to its DDL (`VECTOR(FLOAT, 768)` in Snowflake, `FLOAT[768]` in DuckDB).
 - `create_schema()` also adds any columns that `schema.py` gained since the table was created, so existing databases migrate in place.
@@ -80,7 +88,7 @@ Cortex functions take the model name as a SQL literal, not a bind parameter; `st
 - All timestamps are naive UTC.
 - Every raw pull (Kalshi markets, Odds API events, nflverse tables) is also written to `data/raw/<source>/<date>/*.parquet`.
 
-Changes from the brief's data model: `ROSTERS` (for matching claim names to player IDs), `API_USAGE` (one row per paid call) and `VENUE_GAPS` (Kalshi vs Polymarket disagreements) are added. `INSIDER_SCORES.window` is named `score_window` because `WINDOW` is a reserved word in both Snowflake and DuckDB. `LINE_MOVES` gains `venues`, `explanation`, `detected_at`, and the venue comparison columns `venue_reactions`, `leader_venue` and `lead_lag_minutes`; `GAMES` gains closing lines, roof, rest days and division flag for the model.
+Changes from the brief's data model: `ROSTERS` (for matching claim names to player IDs), `API_USAGE` (one row per paid call), `VENUE_GAPS` (Kalshi vs Polymarket disagreements) and `SYNC_STATE` (local sync bookkeeping) are added. Every table has `updated_at`. `SEARCH_RUNS` also records `move_id`, `game_id`, `posts_kept` and `posts_rejected`. `INSIDER_SCORES.window` is named `score_window` because `WINDOW` is a reserved word in both Snowflake and DuckDB. `LINE_MOVES` gains `venues`, `explanation`, `detected_at`, and the venue comparison columns `venue_reactions`, `leader_venue` and `lead_lag_minutes`; `GAMES` gains closing lines, roof, rest days and division flag for the model.
 
 ## Conventions
 
@@ -118,6 +126,29 @@ A first replay of 36 hours of history (27 games, Oct 24–25 2026, using Kalshi 
 
 That's a hint that a solo Kalshi move is more often noise, but the sample is small and mostly overnight. Re-check it with a full week of live polling.
 
+## Insider posts from X
+
+All X data comes from Grok's server-side `x_search` tool (`sources/xsearch.py`). Trust rules:
+
+- **Citations only.** A post is kept only if its URL is in the response's server-side citations.
+- **Time from the ID.** `posted_at` is decoded from the post ID: `(id >> 22) + 1288834974657` ms.
+- **Author and text from X, not the model.** Both come from X's public oEmbed endpoint (`publish.x.com/oembed`) for that post ID. A post whose author isn't one of the searched handles is rejected. `text_source` is `oembed` (verified text) or `citation_only`. The brief's `grok_quote` isn't used, since oEmbed gives verified text.
+- **Every call is logged** in `SEARCH_RUNS`: handles, window, the model's reply, citations, rejected citations with reasons, and the cost estimate.
+
+**On-move searches** (`pipelines/search_moves.py`) look from 60 minutes before each move through its end. They search the national insiders plus both teams' beat reporters, and link posts in `MOVE_POSTS` with `lead_minutes` (move start minus post time; negative means after). A game searched within `XAI_MOVE_COOLDOWN_MINUTES` reuses the stored posts instead of searching again.
+
+**Sweeps** (`pipelines/sweep_insiders.py`) run every 15 minutes from 90 minutes before a kickoff until it, and hourly otherwise. Each covers the time since the last sweep. They search the national insiders plus beat reporters for teams playing in the next 36 hours.
+
+**Budget.** `XAI_DAILY_BUDGET_USD` caps estimated spend on move searches and sweeps. Sweeps stop at `XAI_SWEEP_BUDGET_SHARE` (80%) of it, so move searches always have room. One-off setup searches (`verify_handles`) don't count.
+
+**What probing the API turned up (Oct 2026):**
+- `to_date` filters by whole days, so `to_date=now` drops today's posts. Searches pass only `from_date` and filter to the exact window using ID timestamps.
+- The prompt must name each handle and ask to search each one. Vaguer prompts made the model run searches that matched nothing.
+- 11 handles per search worked (the brief expected 10). Batches default to 10.
+- A search returns roughly 60 posts, so quiet accounts in a busy batch can be missed.
+
+**Handles.** `scripts/verify_handles.py` confirms each handle posted recently and that the account's display name matches the configured name. `--find` looks up the right handle by name, outlet and team; a beat reporter's posts must also mention their team, so same-named strangers don't pass. That corrected 21 of the beat handles written from memory. 67 of 70 are verified. AdamTeicher, DNewtonespn and agetzenberg remain unverified and are skipped.
+
 ## Move detection
 
 A move is any of the following within `lookback_minutes` (30), using pre-kickoff snapshots only:
@@ -146,6 +177,7 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `SNOWFLAKE_ACCOUNT`, `_USER`, `_ROLE`, `_WAREHOUSE`, `_DATABASE`, `_SCHEMA` | | connection |
 | `SNOWFLAKE_PASSWORD` / `SNOWFLAKE_PRIVATE_KEY_PATH` | | auth; key pair recommended (see "Snowflake setup") |
 | `SNOWFLAKE_CREDIT_CAP` | `20` | monthly credits before the resource monitor suspends the warehouse |
+| `SNOWFLAKE_SYNC_MINUTES` | `60` | minutes between DuckDB → Snowflake syncs in the loop |
 | `SNOWFLAKE_EMBED_MODEL` | `snowflake-arctic-embed-m-v1.5` | `AI_EMBED` model (768 dims) |
 | `SNOWFLAKE_COMPLETE_MODEL` | `claude-sonnet-4-5` | `AI_COMPLETE` model |
 | `KALSHI_BASE_URL` | production public API | |
@@ -160,8 +192,11 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `ODDS_API_MIN_CREDITS` | `50` | stop calling below this |
 | `ODDS_API_LIVE_MIN_CREDITS` | `5000` | keep started games only above this |
 | `XAI_API_KEY`, `XAI_MODEL` | `grok-4.20-non-reasoning` | Grok x_search (milestone 4) |
-| `XAI_MAX_HANDLES_PER_SEARCH` | `10` | handle batch size |
-| `XAI_COST_PER_CALL_USD` | `0.10` | logged cost estimate |
+| `XAI_MAX_HANDLES_PER_SEARCH` | `10` | handle batch size (11 verified to work) |
+| `XAI_PRICE_IN_PER_M`, `XAI_PRICE_OUT_PER_M`, `XAI_SEARCH_FEE_USD` | `1.25`, `2.5`, `0.005` | cost-estimate rates |
+| `XAI_DAILY_BUDGET_USD` | `2.0` | daily cap on move searches + sweeps |
+| `XAI_SWEEP_BUDGET_SHARE` | `0.8` | share of the cap sweeps may use |
+| `XAI_TIMEOUT_SECONDS` | `120` | per-call timeout |
 | `XAI_MOVE_COOLDOWN_MINUTES` | `15` | min gap between searches for one game |
 | `TRADING_ENABLED`, `DRY_RUN`, `KALSHI_ENV`, `MAX_ORDER_USD`, `MAX_DAILY_USD`, `MAX_OPEN_EXPOSURE_USD`, `KILL_SWITCH_FILE` | off / dry / demo | optional trading module |
 | `RAW_DATA_DIR` | `data/raw` | Parquet copies |
@@ -174,7 +209,7 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 - **nflverse:** free.
 - **The Odds API:** one `/odds` call for h2h + spreads + totals with ≤ 10 books costs 3 credits. The brief's schedule (every 30 min Mon–Sat, every 10 min Sunday 9 AM ET to the last kickoff) is about 380 calls a week, roughly **1,150 credits a week or 4,900 a month**. That fits the $30/month tier (20,000 credits) but not the free 500/month tier. Historical snapshots cost 10× (30 credits each), which matters for the backfill.
 - **Snowflake:** an X-Small warehouse uses 1 credit per running hour, billed per second after the first minute. `AUTO_SUSPEND = 60` plus the resource monitor (`SNOWFLAKE_CREDIT_CAP`) bound the spend. Cortex `AI_EMBED` and `AI_COMPLETE` are billed per token on top of that.
-- **xAI:** every call is logged with a cost estimate in `SEARCH_RUNS` (milestone 4).
+- **xAI:** every call is logged with a cost estimate in `SEARCH_RUNS`. The estimate is tokens × price plus searches × fee, with env-tunable rates; check the Logs page on console.x.ai for exact charges. Measured on a Sunday morning: one 10-handle, 6-hour sweep batch cost $0.10–0.58 (the national insiders are the busiest). A full sweep of all 67 verified handles is about $1.20–1.50. The default $2/day cap therefore allows about one full sweep plus move searches; the brief's 15-minute/hourly schedule needs a larger budget or fewer handles per sweep.
 
 ## Where the brief and current docs disagree
 
@@ -191,8 +226,10 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 config/     insiders.yaml (tracked accounts), thresholds.yaml
 common/     settings, team mapping, game matching, raw Parquet writer, logging
 store/      schema.py (tables), base.py (portable SQL), duckdb.py, snowflake.py
-sources/    kalshi.py, polymarket.py, ladder.py (shared exchange math), odds_api.py, nflverse.py
-pipelines/  load_nflverse, ingest_odds, detect_moves, compare_venues, run_all
+sources/    kalshi.py, polymarket.py, ladder.py (shared exchange math), odds_api.py, nflverse.py,
+            xsearch.py
+pipelines/  load_nflverse, ingest_odds, detect_moves, compare_venues, search_moves,
+            sweep_insiders, search_x (shared runner), sync_snowflake, run_all
 scripts/    probe_*.py
 tests/      unit tests on recorded fixtures (no network)
 ```

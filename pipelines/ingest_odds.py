@@ -13,9 +13,11 @@ Run:  python -m pipelines.ingest_odds --once       one pass (Odds API only if du
       python -m pipelines.ingest_odds --loop       keep polling; every --analyze-every
                                                    minutes (default 10) also run
                                                    detect_moves and compare_venues, and
-                                                   every --sync-every minutes (default 60)
-                                                   sync to Snowflake, since DuckDB allows
-                                                   only one writing process
+                                                   search X for new moves; run scheduled
+                                                   insider sweeps when due; and every
+                                                   --sync-every minutes (default 60) sync to
+                                                   Snowflake. All in one process, since
+                                                   DuckDB allows only one writer.
       python -m pipelines.ingest_odds --once --force-odds-api
 """
 from __future__ import annotations
@@ -132,7 +134,8 @@ def poll_odds_api(store, client: odds_api.OddsApiClient, games: list[dict], now:
     return len(snaps)
 
 
-def run_once(store, force_odds_api: bool = False, pm_poller: PolymarketPoller | None = None) -> None:
+def run_once(store, force_odds_api: bool = False, pm_poller: PolymarketPoller | None = None,
+             use_odds_api: bool = True) -> None:
     now = utcnow()
     games = store.games_between(now - timedelta(days=2), now + timedelta(days=10))
     if not games:
@@ -146,6 +149,8 @@ def run_once(store, force_odds_api: bool = False, pm_poller: PolymarketPoller | 
         (pm_poller or PolymarketPoller()).poll(store, games, now)
     except Exception as e:
         log.error("polymarket poll failed: %s", e)
+    if not use_odds_api:
+        return
     client = odds_api.OddsApiClient(store=store)
     if not client.key:
         log.info("ODDS_API_KEY not set; skipping The Odds API")
@@ -167,6 +172,10 @@ def main() -> None:
     ap.add_argument("--force-odds-api", action="store_true")
     ap.add_argument("--analyze-every", type=float, default=10,
                     help="minutes between detect_moves + compare_venues runs in --loop (0 = never)")
+    ap.add_argument("--no-odds-api", action="store_true",
+                    help="don't poll The Odds API (e.g. to save free-tier credits)")
+    ap.add_argument("--no-x", action="store_true", help="skip all X searches in --loop")
+    ap.add_argument("--no-sweeps", action="store_true", help="keep on-move searches, skip scheduled sweeps")
     ap.add_argument("--sync-every", type=float, default=env_float("SNOWFLAKE_SYNC_MINUTES", 60),
                     help="minutes between Snowflake syncs in --loop (0 = never; needs SNOWFLAKE_ACCOUNT)")
     args = ap.parse_args()
@@ -174,20 +183,31 @@ def main() -> None:
     store.create_schema()
     if args.loop:
         period = env_int("KALSHI_POLL_SECONDS", 60)
-        from pipelines import compare_venues, detect_moves, sync_snowflake
+        from pipelines import compare_venues, detect_moves, search_moves, sweep_insiders, sync_snowflake
         pm_poller = PolymarketPoller()
         last_analysis = last_sync = 0.0
         can_sync = store.dialect == "duckdb" and bool(env("SNOWFLAKE_ACCOUNT")) and args.sync_every > 0
+        x_client = None
+        if env("XAI_API_KEY") and not args.no_x:
+            from sources.xsearch import XSearchClient
+            x_client = XSearchClient()
         while True:
             started = time.time()
-            run_once(store, pm_poller=pm_poller)
+            run_once(store, pm_poller=pm_poller, use_odds_api=not args.no_odds_api)
             if args.analyze_every and started - last_analysis >= args.analyze_every * 60:
                 try:
                     detect_moves.run(store, hours=24)
                     compare_venues.run(store, hours=24)
+                    if x_client:
+                        search_moves.run(store, x_client, hours=24)
                 except Exception as e:
                     log.error("analysis failed: %s", e)
                 last_analysis = started
+            if x_client and not args.no_sweeps:
+                try:
+                    sweep_insiders.run(store, x_client)  # no-op unless due
+                except Exception as e:
+                    log.error("sweep failed: %s", e)
             if can_sync and started - last_sync >= args.sync_every * 60:
                 try:
                     sync_snowflake.run(store)
@@ -196,7 +216,7 @@ def main() -> None:
                 last_sync = started
             time.sleep(max(1, period - (time.time() - started)))
     else:
-        run_once(store, args.force_odds_api)
+        run_once(store, args.force_odds_api, use_odds_api=not args.no_odds_api)
 
 
 if __name__ == "__main__":

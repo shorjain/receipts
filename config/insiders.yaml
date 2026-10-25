@@ -7,8 +7,10 @@
 # verified to true or reports the handle so you can fix it. Sweeps skip
 # unverified handles unless you pass --include-unverified.
 #
-# Known gaps to review: ARI and ATL have one candidate each; MIA (Marcel_LJ)
-# and HOU (DJ_Bien_Aime) handles are the least certain; outlets may be out of date.
+# Status (Oct 25 2026): 67 of 70 verified. 21 beat handles were corrected by
+# `verify_handles --find` (display name and team checked via oEmbed). Still unverified,
+# so skipped by searches: AdamTeicher (KC), DNewtonespn (CAR), agetzenberg (BUF).
+# ARI and ATL have one reporter each. Outlets may be out of date.
 insiders:
 - handle: AdamSchefter
   name: Adam Schefter
@@ -66,21 +68,23 @@ insiders:
   teams: []
   verified: true
   active: true
-- handle: DarrenUrban
+# handle corrected from DarrenUrban
+- handle: Cardschatter
   name: Darren Urban
   outlet: Cardinals.com
   tier: beat
   teams:
   - ARI
-  verified: false
+  verified: true
   active: true
-- handle: JoshKendallATH
+# handle corrected from JoshKendallATH
+- handle: JoshTheAthletic
   name: Josh Kendall
   outlet: The Athletic
   tier: beat
   teams:
   - ATL
-  verified: false
+  verified: true
   active: true
 - handle: jamisonhensley
   name: Jamison Hensley
@@ -88,7 +92,7 @@ insiders:
   tier: beat
   teams:
   - BAL
-  verified: false
+  verified: true
   active: true
 - handle: jeffzrebiec
   name: Jeff Zrebiec
@@ -96,7 +100,7 @@ insiders:
   tier: beat
   teams:
   - BAL
-  verified: false
+  verified: true
   active: true
 - handle: agetzenberg
   name: Alaina Getzenberg
@@ -112,7 +116,7 @@ insiders:
   tier: beat
   teams:
   - BUF
-  verified: false
+  verified: true
   active: true
 - handle: josephperson
   name: Joseph Person
@@ -120,7 +124,7 @@ insiders:
   tier: beat
   teams:
   - CAR
-  verified: false
+  verified: true
   active: true
 - handle: DNewtonespn
   name: David Newton
@@ -136,7 +140,7 @@ insiders:
   tier: beat
   teams:
   - CHI
-  verified: false
+  verified: true
   active: true
 - handle: adamjahns
   name: Adam Jahns
@@ -144,7 +148,7 @@ insiders:
   tier: beat
   teams:
   - CHI
-  verified: false
+  verified: true
   active: true
 - handle: PaulDehnerJr
   name: Paul Dehner Jr.
@@ -152,15 +156,16 @@ insiders:
   tier: beat
   teams:
   - CIN
-  verified: false
+  verified: true
   active: true
-- handle: ByBenBaby
+# handle corrected from ByBenBaby
+- handle: Ben_Baby
   name: Ben Baby
   outlet: ESPN
   tier: beat
   teams:
   - CIN
-  verified: false
+  verified: true
   active: true
 - handle: MaryKayCabot
   name: Mary Kay Cabot
@@ -168,15 +173,16 @@ insiders:
   tier: beat
   teams:
   - CLE
-  verified: false
+  verified: true
   active: true
-- handle: ZacJackson
+# handle corrected from ZacJackson
+- handle: AkronJackson
   name: Zac Jackson
   outlet: The Athletic
   tier: beat
   teams:
   - CLE
-  verified: false
+  verified: true
   active: true
 - handle: toddarcher
   name: Todd Archer
@@ -184,7 +190,7 @@ insiders:
   tier: beat
   teams:
   - DAL
-  verified: false
+  verified: true
   active: true
 - handle: ClarenceHillJr
   name: Clarence Hill Jr.
@@ -192,23 +198,25 @@ insiders:
   tier: beat
   teams:
   - DAL
-  verified: false
+  verified: true
   active: true
-- handle: MikeKlis
+# handle corrected from MikeKlis
+- handle: mikeklis9news
   name: Mike Klis
   outlet: 9News
   tier: beat
   teams:
   - DEN
-  verified: false
+  verified: true
   active: true
-- handle: ZacStevensDNVR
+# handle corrected from ZacStevensDNVR
+- handle: ZacStevens
   name: Zac Stevens
   outlet: DNVR
   tier: beat
   teams:
   - DEN
-  verified: false
+  verified: true
   active: true
 - handle: davebirkett
   name: Dave Birkett
@@ -216,15 +224,16 @@ insiders:
   tier: beat
   teams:
   - DET
-  verified: false
+  verified: true
   active: true
-- handle: ColtonPouncy
+# handle corrected from ColtonPouncy
+- handle: colton_pouncy
   name: Colton Pouncy
   outlet: The Athletic
   tier: beat
   teams:
   - DET
-  verified: false
+  verified: true
   active: true
 - handle: RobDemovsky
   name: Rob Demovsky
@@ -232,7 +241,7 @@ insiders:
   tier: beat
   teams:
   - GB
-  verified: false
+  verified: true
   active: true
 - handle: mattschneidman
   name: Matt Schneidman
@@ -240,7 +249,7 @@ insiders:
   tier: beat
   teams:
   - GB
-  verified: false
+  verified: true
   active: true
 - handle: AaronWilson_NFL
   name: Aaron Wilson
@@ -248,15 +257,16 @@ insiders:
   tier: beat
   teams:
   - HOU
-  verified: false
+  verified: true
   active: true
-- handle: DJ_Bien_Aime
+# handle corrected from DJ_Bien_Aime
+- handle: Djbienaime
   name: DJ Bien-Aime
   outlet: ESPN
   tier: beat
   teams:
   - HOU
-  verified: false
+  verified: true
   active: true
 - handle: zkeefer
   name: Zak Keefer
@@ -264,7 +274,7 @@ insiders:
   tier: beat
   teams:
   - IND
-  verified: false
+  verified: true
   active: true
 - handle: JoelAErickson
   name: Joel A. Erickson
@@ -272,15 +282,16 @@ insiders:
   tier: beat
   teams:
   - IND
-  verified: false
+  verified: true
   active: true
-- handle: MikeDiRocco
+# handle corrected from MikeDiRocco
+- handle: ESPNdirocco
   name: Michael DiRocco
   outlet: ESPN
   tier: beat
   teams:
   - JAX
-  verified: false
+  verified: true
   active: true
 - handle: JohnReidIV
   name: John Reid
@@ -288,7 +299,7 @@ insiders:
   tier: beat
   teams:
   - JAX
-  verified: false
+  verified: true
   active: true
 - handle: AdamTeicher
   name: Adam Teicher
@@ -304,31 +315,34 @@ insiders:
   tier: beat
   teams:
   - KC
-  verified: false
+  verified: true
   active: true
-- handle: VBonsignore
+# handle corrected from VBonsignore
+- handle: VinnyBonsignore
   name: Vincent Bonsignore
   outlet: Las Vegas Review-Journal
   tier: beat
   teams:
   - LV
-  verified: false
+  verified: true
   active: true
-- handle: PaulGutierrez
+# handle corrected from PaulGutierrez
+- handle: PaulHGutierrez
   name: Paul Gutierrez
   outlet: ESPN
   tier: beat
   teams:
   - LV
-  verified: false
+  verified: true
   active: true
-- handle: krisrhim
+# handle corrected from krisrhim
+- handle: krisrhim1
   name: Kris Rhim
   outlet: ESPN
   tier: beat
   teams:
   - LAC
-  verified: false
+  verified: true
   active: true
 - handle: DanielRPopper
   name: Daniel Popper
@@ -336,7 +350,7 @@ insiders:
   tier: beat
   teams:
   - LAC
-  verified: false
+  verified: true
   active: true
 - handle: JourdanRodrigue
   name: Jourdan Rodrigue
@@ -344,7 +358,7 @@ insiders:
   tier: beat
   teams:
   - LA
-  verified: false
+  verified: true
   active: true
 - handle: LATimesklein
   name: Gary Klein
@@ -352,7 +366,7 @@ insiders:
   tier: beat
   teams:
   - LA
-  verified: false
+  verified: true
   active: true
 - handle: Marcel_LJ
   name: Marcel Louis-Jacques
@@ -360,23 +374,25 @@ insiders:
   tier: beat
   teams:
   - MIA
-  verified: false
+  verified: true
   active: true
-- handle: Joe_Schad
+# handle corrected from Joe_Schad
+- handle: schadjoe
   name: Joe Schad
   outlet: Palm Beach Post
   tier: beat
   teams:
   - MIA
-  verified: false
+  verified: true
   active: true
-- handle: KevinSeifert
+# handle corrected from KevinSeifert
+- handle: SeifertESPN
   name: Kevin Seifert
   outlet: ESPN
   tier: beat
   teams:
   - MIN
-  verified: false
+  verified: true
   active: true
 - handle: alec_lewis
   name: Alec Lewis
@@ -384,7 +400,7 @@ insiders:
   tier: beat
   teams:
   - MIN
-  verified: false
+  verified: true
   active: true
 - handle: MikeReiss
   name: Mike Reiss
@@ -392,7 +408,7 @@ insiders:
   tier: beat
   teams:
   - NE
-  verified: false
+  verified: true
   active: true
 - handle: ChadGraff
   name: Chad Graff
@@ -400,31 +416,34 @@ insiders:
   tier: beat
   teams:
   - NE
-  verified: false
+  verified: true
   active: true
-- handle: Katherine_Terrell
+# handle corrected from Katherine_Terrell
+- handle: Kat_Terrell
   name: Katherine Terrell
   outlet: ESPN
   tier: beat
   teams:
   - 'NO'
-  verified: false
+  verified: true
   active: true
-- handle: LukeJohnsonNOLA
+# handle corrected from LukeJohnsonNOLA
+- handle: ByLukeJohnson
   name: Luke Johnson
   outlet: Times-Picayune
   tier: beat
   teams:
   - 'NO'
-  verified: false
+  verified: true
   active: true
-- handle: DanDuggan
+# handle corrected from DanDuggan
+- handle: DDuggan21
   name: Dan Duggan
   outlet: The Athletic
   tier: beat
   teams:
   - NYG
-  verified: false
+  verified: true
   active: true
 - handle: JordanRaanan
   name: Jordan Raanan
@@ -432,7 +451,7 @@ insiders:
   tier: beat
   teams:
   - NYG
-  verified: false
+  verified: true
   active: true
 - handle: RichCimini
   name: Rich Cimini
@@ -440,7 +459,7 @@ insiders:
   tier: beat
   teams:
   - NYJ
-  verified: false
+  verified: true
   active: true
 - handle: Connor_J_Hughes
   name: Connor Hughes
@@ -448,15 +467,16 @@ insiders:
   tier: beat
   teams:
   - NYJ
-  verified: false
+  verified: true
   active: true
-- handle: JeffMcLane
+# handle corrected from JeffMcLane
+- handle: Jeff_McLane
   name: Jeff McLane
   outlet: Philadelphia Inquirer
   tier: beat
   teams:
   - PHI
-  verified: false
+  verified: true
   active: true
 - handle: ZBerm
   name: Zach Berman
@@ -464,15 +484,16 @@ insiders:
   tier: beat
   teams:
   - PHI
-  verified: false
+  verified: true
   active: true
-- handle: BrookePryor
+# handle corrected from BrookePryor
+- handle: bepryor
   name: Brooke Pryor
   outlet: ESPN
   tier: beat
   teams:
   - PIT
-  verified: false
+  verified: true
   active: true
 - handle: MarkKaboly
   name: Mark Kaboly
@@ -480,7 +501,7 @@ insiders:
   tier: beat
   teams:
   - PIT
-  verified: false
+  verified: true
   active: true
 - handle: mattbarrows
   name: Matt Barrows
@@ -488,15 +509,16 @@ insiders:
   tier: beat
   teams:
   - SF
-  verified: false
+  verified: true
   active: true
-- handle: NickWagoner
+# handle corrected from NickWagoner
+- handle: nwagoner
   name: Nick Wagoner
   outlet: ESPN
   tier: beat
   teams:
   - SF
-  verified: false
+  verified: true
   active: true
 - handle: BradyHenderson
   name: Brady Henderson
@@ -504,7 +526,7 @@ insiders:
   tier: beat
   teams:
   - SEA
-  verified: false
+  verified: true
   active: true
 - handle: bcondotta
   name: Bob Condotta
@@ -512,7 +534,7 @@ insiders:
   tier: beat
   teams:
   - SEA
-  verified: false
+  verified: true
   active: true
 - handle: JennaLaineESPN
   name: Jenna Laine
@@ -520,7 +542,7 @@ insiders:
   tier: beat
   teams:
   - TB
-  verified: false
+  verified: true
   active: true
 - handle: gregauman
   name: Greg Auman
@@ -528,15 +550,16 @@ insiders:
   tier: beat
   teams:
   - TB
-  verified: false
+  verified: true
   active: true
-- handle: TurronDavenport
+# handle corrected from TurronDavenport
+- handle: TDavenport_NFL
   name: Turron Davenport
   outlet: ESPN
   tier: beat
   teams:
   - TEN
-  verified: false
+  verified: true
   active: true
 - handle: PaulKuharskyNFL
   name: Paul Kuharsky
@@ -544,7 +567,7 @@ insiders:
   tier: beat
   teams:
   - TEN
-  verified: false
+  verified: true
   active: true
 - handle: john_keim
   name: John Keim
@@ -552,7 +575,7 @@ insiders:
   tier: beat
   teams:
   - WAS
-  verified: false
+  verified: true
   active: true
 - handle: BenStandig
   name: Ben Standig
@@ -560,5 +583,5 @@ insiders:
   tier: beat
   teams:
   - WAS
-  verified: false
+  verified: true
   active: true

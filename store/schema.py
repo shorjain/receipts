@@ -58,6 +58,8 @@ TABLES: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
         ("run_id", STR), ("purpose", STR), ("window_start", TS), ("window_end", TS),
         ("handles", STR), ("raw_response", JSON), ("citations", JSON), ("error", STR),
         ("cost_estimate_usd", FLOAT), ("ran_at", TS),
+        # Not in the brief: which move (if any) this run served, and verification counts.
+        ("move_id", STR), ("game_id", STR), ("posts_kept", INT), ("posts_rejected", INT),
     ], ["run_id"]),
     "MOVE_POSTS": ([
         ("move_id", STR), ("post_id", STR), ("lead_minutes", FLOAT),

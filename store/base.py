@@ -220,6 +220,50 @@ class SqlStore:
             f"({', '.join('?' for _ in move_ids)})", list(move_ids))
         return {r["move_id"]: r["explain_status"] for r in rows}
 
+    # ---- POSTS / SEARCH_RUNS / MOVE_POSTS ----------------------------------
+    def upsert_posts(self, rows: Iterable[dict]) -> int:
+        return self.upsert("POSTS", rows)
+
+    def posts_by_id(self, post_ids: Sequence[str]) -> dict[str, dict]:
+        if not post_ids:
+            return {}
+        rows = self._query(f"SELECT * FROM POSTS WHERE post_id IN ({', '.join('?' for _ in post_ids)})",
+                           list(post_ids))
+        return {r["post_id"]: r for r in rows}
+
+    def posts_in_window(self, start: datetime, end: datetime,
+                        authors: Sequence[str] | None = None) -> list[dict]:
+        sql, params = "SELECT * FROM POSTS WHERE posted_at >= ? AND posted_at <= ?", [utc_naive(start), utc_naive(end)]
+        if authors:
+            sql += f" AND author IN ({', '.join('?' for _ in authors)})"; params.extend(authors)
+        return self._query(sql + " ORDER BY posted_at", params)
+
+    def insert_search_run(self, row: dict) -> None:
+        self.upsert("SEARCH_RUNS", [row])
+
+    def search_cost_since(self, since: datetime, purposes: Sequence[str] | None = None) -> float:
+        sql, params = "SELECT SUM(cost_estimate_usd) AS c FROM SEARCH_RUNS WHERE ran_at >= ?", [utc_naive(since)]
+        if purposes:
+            sql += f" AND purpose IN ({', '.join('?' for _ in purposes)})"; params.extend(purposes)
+        rows = self._query(sql, params)
+        return float(rows[0]["c"] or 0) if rows else 0.0
+
+    def search_runs(self, purpose: str | None = None, since: datetime | None = None) -> list[dict]:
+        sql, params = "SELECT * FROM SEARCH_RUNS WHERE 1=1", []
+        if purpose:
+            sql += " AND purpose = ?"; params.append(purpose)
+        if since is not None:
+            sql += " AND ran_at >= ?"; params.append(utc_naive(since))
+        return self._query(sql + " ORDER BY ran_at DESC", params)
+
+    def upsert_move_posts(self, rows: Iterable[dict]) -> int:
+        return self.upsert("MOVE_POSTS", rows)
+
+    def move_posts(self, move_id: str) -> list[dict]:
+        return self._query("SELECT mp.*, p.author, p.posted_at, p.text, p.url FROM MOVE_POSTS mp "
+                           "JOIN POSTS p ON p.post_id = mp.post_id WHERE mp.move_id = ? "
+                           "ORDER BY p.posted_at", [move_id])
+
     # ---- VENUE_GAPS --------------------------------------------------------
     def upsert_venue_gaps(self, rows: Iterable[dict]) -> int:
         return self.upsert("VENUE_GAPS", rows)
