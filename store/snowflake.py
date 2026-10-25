@@ -126,6 +126,12 @@ class SnowflakeStore(SqlStore):
             out.append(json.loads(row) if isinstance(row, str) else list(row))
         return out
 
+    def _similarity_sql(self, query: str | None) -> tuple[str, list] | None:
+        if not query:
+            return None
+        model = self._model_literal(env("SNOWFLAKE_EMBED_MODEL", "snowflake-arctic-embed-m-v1.5"))
+        return f"VECTOR_COSINE_SIMILARITY(embedding, AI_EMBED({model}, ?))", [query]
+
     def similarities(self, query: str, texts: list[str]) -> list[float]:
         """Cosine similarity of AI_EMBED(query) with AI_EMBED(each text), one round trip."""
         if not texts:

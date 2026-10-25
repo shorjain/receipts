@@ -18,7 +18,7 @@ A personal NFL analytics app that answers two questions:
 | 6 | Claims, resolution, scores, Leaderboard + Insider pages | |
 | 7 | Season backfill | done (runs in the loop, resumable) |
 | 8 | Win-probability model + Games page | done (doesn't beat the closing line yet; reported honestly) |
-| 9 | Ask chatbot | |
+| 9 | Ask chatbot | done |
 | 10 | DuckDB fallback store (local embeddings + Ollama) | base tables done early; AI functions pending |
 | 11 | Trading module (optional, off) | |
 
@@ -54,7 +54,7 @@ python -m pipelines.backfill --status               # season backfill progress (
 python -m pipelines.train_model                     # walk-forward report + predictions
 python -m pipelines.sync_snowflake                  # copy new local rows to Snowflake
 streamlit run app/Home.py                           # UI (reads data/ui_snapshot.duckdb)
-uvicorn api.main:app --reload                       # JSON API: /moves, /moves/{id}
+uvicorn api.main:app --reload                       # JSON API: /moves, /moves/{id}, /ask?q=
 ```
 
 Probe scripts hit each API once and save a fixture to `tests/fixtures/`:
@@ -263,6 +263,22 @@ Results (Oct 25 2026), where lower is better:
 - the five features that moved each prediction most (logistic-regression contributions);
 - the walk-forward report card and calibration chart, from `data/model/report.json`.
 
+## Ask chatbot
+
+`rag/` answers questions only from stored data:
+
+1. **`parse.py`** turns the question into filters with plain rules, no model. It finds teams (nicknames, full names, cities; ambiguous abbreviations like NO or LA only in upper case), players (full name, or a last name only one rostered player has), insiders (handle, name, or a last name not already used by a player: "Lamar Jackson" doesn't pull in reporter Zac Jackson), claim types ("injury" → active / inactive / questionable / return date), a time window ("this morning", "yesterday", "on Friday", "week 7", "last 3 hours", "this season", ET-based) and an intent (moves, scoop, scores, predictions).
+2. **`retrieve.py`** filters with SQL through `store.ask_*`. In Snowflake, posts and moves are ranked by `VECTOR_COSINE_SIMILARITY` to the question. Questions about an insider's accuracy get stats for exactly the asked claim types and window, computed with `score_insiders`' formulas.
+3. **`answer.py`** builds a numbered evidence block (`[M#]` moves, `[P#]` posts, `[C#]` claims, `[S#]` insider stats, `[G#]` predictions) and calls `AI_COMPLETE` at temperature 0.
+4. **Grounding guard:** `rag/guard.py` with `require_citation`, so every sentence must cite evidence. It also drops numbers not in the evidence, strips unknown citations, and caps answers at 4 sentences. With no evidence it refuses without calling the model.
+
+Asks read from Snowflake, which holds the embeddings, so data is up to one hourly sync old. `ASK_STORE=local` reads the local snapshot instead (fresher, ranked by recency) and still uses Cortex to write the answer. Available on the **Ask** page and as `GET /ask?q=`.
+
+Examples from Oct 25 2026:
+- "Who broke the Lamar Jackson news first?" → @jeffzrebiec at 3:31 PM ET Saturday, with Hensley and Cabot after him, all cited.
+- "How accurate has Zrebiec been on injury calls this season?" → 11 injury claims, none resolved yet, so the smoothed 0.50 is a placeholder.
+- "Why did the Bills line drop this morning?" → says the stored data doesn't show a Bills move this morning.
+
 ## UI and API
 
 DuckDB lets only one process open its file for writing, so the ingest loop writes a read-only copy, `data/ui_snapshot.duckdb`, every 5 minutes. The Streamlit pages (`app/`) and the FastAPI app (`api/main.py`) read that copy, so they never wake Snowflake.
@@ -331,6 +347,7 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `BACKFILL_XAI_USD` | `3.0` | total xAI spend for searching past moves |
 | `BACKFILL_ODDS_API_CREDITS` | `0` | credits for historical Odds API snapshots (30 each) |
 | `MODEL_DISAGREE_POINTS` | `0.08` | Games page flags model-vs-market gaps at least this big |
+| `ASK_STORE` | `snowflake` | where Ask retrieves from: `snowflake` (vector ranking) or `local` (fresher snapshot) |
 | `RAW_DATA_DIR` | `data/raw` | Parquet copies |
 | `LOG_LEVEL` | `INFO` | |
 
@@ -363,8 +380,8 @@ sources/    kalshi.py, polymarket.py, ladder.py (shared exchange math), odds_api
 pipelines/  load_nflverse, ingest_odds, detect_moves, compare_venues, search_moves,
             sweep_insiders, search_x (shared runner), explain_moves, extract_claims,
             resolve_claims, score_insiders, sync_snowflake, run_all
-rag/        guard.py (grounding guard, shared with the Ask chatbot)
-app/        Streamlit: Home, Moves, Leaderboard, Insider, Games
+rag/        parse.py, retrieve.py, answer.py (Ask) and guard.py (shared grounding guard)
+app/        Streamlit: Home, Moves, Leaderboard, Insider, Games, Ask
 api/        FastAPI read-only endpoints
 scripts/    probe_*.py
 tests/      unit tests on recorded fixtures (no network)

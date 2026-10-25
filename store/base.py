@@ -378,6 +378,93 @@ class SqlStore:
             "SELECT * FROM API_USAGE WHERE source = ? ORDER BY called_at DESC LIMIT 1", [source])
         return rows[0] if rows else None
 
+    # ---- Ask chatbot retrieval -------------------------------------------
+    def _similarity_sql(self, query: str | None) -> tuple[str, list] | None:
+        """SQL ranking rows by embedding similarity to `query`; None where unsupported."""
+        return None
+
+    def _in(self, col: str, values: Sequence) -> tuple[str, list]:
+        return f" AND {col} IN ({', '.join('?' for _ in values)})", list(values)
+
+    def ask_moves(self, start: datetime | None, end: datetime | None, game_ids: Sequence[str] | None = None,
+                  query: str | None = None, limit: int = 6) -> list[dict]:
+        sql, params = ("SELECT move_id, game_id, market_type, venue_scope, venues, window_start, window_end, "
+                       "prob_before, prob_after, line_before, line_after, magnitude_score, summary_text, "
+                       "explanation, explain_status, leader_venue, lead_lag_minutes FROM LINE_MOVES WHERE 1=1"), []
+        if start is not None:
+            sql += " AND window_end >= ?"; params.append(utc_naive(start))
+        if end is not None:
+            sql += " AND window_start <= ?"; params.append(utc_naive(end))
+        if game_ids:
+            frag, p = self._in("game_id", game_ids); sql += frag; params += p
+        rank = self._similarity_sql(query)
+        if rank:
+            sql += f" ORDER BY {rank[0]} DESC NULLS LAST, magnitude_score DESC"; params += rank[1]
+        else:
+            sql += " ORDER BY magnitude_score DESC, window_start DESC"
+        return self._query(sql + " LIMIT ?", params + [limit])
+
+    def ask_posts(self, start: datetime | None, end: datetime | None, authors: Sequence[str] | None = None,
+                  terms: Sequence[str] | None = None, query: str | None = None, limit: int = 8) -> list[dict]:
+        sql, params = "SELECT post_id, url, author, posted_at, text FROM POSTS WHERE text IS NOT NULL", []
+        if start is not None:
+            sql += " AND posted_at >= ?"; params.append(utc_naive(start))
+        if end is not None:
+            sql += " AND posted_at <= ?"; params.append(utc_naive(end))
+        if authors:
+            frag, p = self._in("author", authors); sql += frag; params += p
+        if terms:
+            sql += " AND (" + " OR ".join("text ILIKE ?" for _ in terms) + ")"; params += [f"%{t}%" for t in terms]
+        rank = self._similarity_sql(query)
+        if rank:
+            sql += f" ORDER BY {rank[0]} DESC NULLS LAST, posted_at DESC"; params += rank[1]
+        else:
+            sql += " ORDER BY posted_at DESC"
+        return self._query(sql + " LIMIT ?", params + [limit])
+
+    def ask_claims(self, start: datetime | None, end: datetime | None, authors: Sequence[str] | None = None,
+                   player_ids: Sequence[str] | None = None, player_names: Sequence[str] | None = None,
+                   types: Sequence[str] | None = None, limit: int = 40) -> list[dict]:
+        sql = ("SELECT c.claim_id, c.author, c.posted_at, c.player_id, c.player_name, c.team, c.claim_type, "
+               "c.predicted_value, c.hedging, c.is_original, c.credited_handle, c.story_id, c.claim_text, "
+               "r.outcome, p.url FROM CLAIMS c LEFT JOIN CLAIM_RESOLUTIONS r ON r.claim_id = c.claim_id "
+               "LEFT JOIN POSTS p ON p.post_id = c.post_id WHERE 1=1")
+        params: list = []
+        if start is not None:
+            sql += " AND c.posted_at >= ?"; params.append(utc_naive(start))
+        if end is not None:
+            sql += " AND c.posted_at <= ?"; params.append(utc_naive(end))
+        if authors:
+            frag, p = self._in("c.author", authors); sql += frag; params += p
+        if types:
+            frag, p = self._in("c.claim_type", types); sql += frag; params += p
+        who = []
+        if player_ids:
+            frag, p = self._in("c.player_id", player_ids); who.append(frag[5:]); params += p
+        if player_names:
+            who.append("(" + " OR ".join("c.player_name ILIKE ?" for _ in player_names) + ")")
+            params += [f"%{n}%" for n in player_names]
+        if who:
+            sql += " AND (" + " OR ".join(who) + ")"
+        return self._query(sql + " ORDER BY c.posted_at LIMIT ?", params + [limit])
+
+    def ask_scores(self, authors: Sequence[str] | None = None, limit: int = 10) -> list[dict]:
+        sql, params = "SELECT * FROM INSIDER_SCORES WHERE 1=1", []
+        if authors:
+            frag, p = self._in("author", authors); sql += frag; params += p
+        return self._query(sql + " ORDER BY season DESC, credibility_weight DESC LIMIT ?", params + [limit * 2])
+
+    def ask_predictions(self, game_ids: Sequence[str]) -> list[dict]:
+        if not game_ids:
+            return []
+        frag, params = self._in("game_id", game_ids)
+        rows = self._query("SELECT * FROM PREDICTIONS WHERE model_version LIKE ?" + frag + " ORDER BY made_at",
+                           ["%-live"] + params)
+        latest = {}
+        for r in rows:
+            latest[r["game_id"]] = r
+        return list(latest.values())
+
     # ---- AI (overridden per backend) --------------------------------------
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         raise NotImplementedError

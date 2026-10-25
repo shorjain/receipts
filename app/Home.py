@@ -32,5 +32,5 @@ st.markdown("""
 - **Leaderboard**: insiders ranked by accuracy, speed and market impact.
 - **Insider**: one reporter's full receipt log, every claim with its outcome and evidence.
 - **Games**: the model's win probability next to the market's, with an honest report card.
-- Ask arrives in a later milestone.
+- **Ask**: questions answered only from stored data, with every source cited.
 """)

@@ -28,6 +28,19 @@ def moves(days: int = 7, game_id: str | None = None, status: str | None = None) 
         s.close()
 
 
+@app.get("/ask")
+def ask(q: str) -> dict:
+    """Grounded answer with its numbered evidence (needs Snowflake Cortex)."""
+    from rag.answer import answer, ask_backends
+    store, ai = ask_backends()
+    try:
+        a = answer(q, store, ai)
+    finally:
+        ai.close()
+    return {"question": a.question, "answer": a.text, "refused": a.refused,
+            "evidence": [{"id": e["id"], "kind": e["kind"], "text": e["line"], "url": e.get("url")} for e in a.evidence]}
+
+
 @app.get("/moves/{move_id}")
 def move(move_id: str) -> dict:
     s = get_read_store()

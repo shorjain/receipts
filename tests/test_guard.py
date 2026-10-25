@@ -45,3 +45,9 @@ def test_helpers():
     assert numbers_in("rose 40.0% -> 45.0% (+5.0 pp) [P1] 49ers") == [40.0, 45.0, 5.0, 49.0]
     assert split_sentences("Line moved from 3.5 to 4.5 [M1]. Then [P1] said so.") == [
         "Line moved from 3.5 to 4.5 [M1].", "Then [P1] said so."]
+
+
+def test_require_citation_drops_uncited_sentences():
+    r = guard("Schefter reported Stafford inactive [P1]. Everyone knew already.", EVIDENCE, VALID, AFTER,
+              require_citation=True)
+    assert r.kept == ["Schefter reported Stafford inactive [P1]."] and r.dropped[0][1] == "no citation"

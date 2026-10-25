@@ -6,6 +6,7 @@ Given model output and the numbered evidence block it was written from:
   3. a causal sentence ("because", "after", "sparked", ...) with no post citation is dropped;
   4. a causal sentence whose only cited posts came after the move is dropped (those
      posts report on the move; they can't have caused it);
+  (optional) require_citation: any sentence without a valid citation is dropped (Ask);
   5. at most max_sentences survive. If none do, the caller refuses instead of guessing.
 """
 from __future__ import annotations
@@ -57,7 +58,8 @@ def _supported(n: float, allowed: list[float], tol: float = 0.051) -> bool:
 
 
 def guard(answer: str, evidence: str, valid_ids: set[str], after_ids: set[str] = frozenset(),
-          max_sentences: int = 3, post_prefix: str = "P") -> GuardResult:
+          max_sentences: int = 3, post_prefix: str | tuple[str, ...] = "P",
+          require_citation: bool = False) -> GuardResult:
     allowed = numbers_in(evidence)
     res = GuardResult(text="")
     for sentence in split_sentences(answer):
@@ -68,6 +70,9 @@ def guard(answer: str, evidence: str, valid_ids: set[str], after_ids: set[str] =
         bad = [n for n in numbers_in(s) if not _supported(n, allowed)]
         if bad:
             res.dropped.append((sentence, f"unsupported number {bad[0]:g}"))
+            continue
+        if require_citation and not CITE.search(s):
+            res.dropped.append((sentence, "no citation"))
             continue
         posts = [c for c in CITE.findall(s) if c.startswith(post_prefix)]
         if CAUSAL.search(s) and not posts:
