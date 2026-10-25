@@ -145,9 +145,9 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `ODDS_API_BOOKMAKERS` | pinnacle, DK, FD, MGM, Caesars (`williamhill_us`), ESPN BET | ≤ 10 books bill as one region |
 | `ODDS_API_MIN_CREDITS` | `50` | stop calling below this |
 | `ODDS_API_LIVE_MIN_CREDITS` | `5000` | keep started games only above this |
-| `XAI_API_KEY`, `XAI_MODEL` | | Grok x_search (milestone 4) |
+| `XAI_API_KEY`, `XAI_MODEL` | `grok-4.20-non-reasoning` | Grok x_search (milestone 4) |
 | `XAI_MAX_HANDLES_PER_SEARCH` | `10` | handle batch size |
-| `XAI_COST_PER_CALL_USD` | `0.03` | logged cost estimate |
+| `XAI_COST_PER_CALL_USD` | `0.10` | logged cost estimate |
 | `XAI_MOVE_COOLDOWN_MINUTES` | `15` | min gap between searches for one game |
 | `TRADING_ENABLED`, `DRY_RUN`, `KALSHI_ENV`, `MAX_ORDER_USD`, `MAX_DAILY_USD`, `MAX_OPEN_EXPOSURE_USD`, `KILL_SWITCH_FILE` | off / dry / demo | optional trading module |
 | `RAW_DATA_DIR` | `data/raw` | Parquet copies |
