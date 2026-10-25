@@ -137,3 +137,12 @@ def test_setup_searches_do_not_count_against_daily_budget(store):
     store.insert_search_run({"run_id": "v", "purpose": "verify", "cost_estimate_usd": 5.0, "ran_at": T0})
     assert search_x.budget_left(store, "move", T0) == pytest.approx(1.0)
     assert search_x.budget_left(store, "verify", T0) == float("inf")
+
+
+def test_without_x_client_moves_link_stored_posts(store, la_lv_game):
+    seed_move(store, la_lv_game)
+    store.upsert_posts([{"post_id": pid_at(T0 - timedelta(minutes=8)), "author": "AdamSchefter",
+                         "posted_at": T0 - timedelta(minutes=8), "url": "u", "text": "t", "text_source": "oembed"}])
+    assert search_moves.run(store, None, now=T0 + timedelta(hours=1)) == 1
+    assert [r["lead_minutes"] for r in store.move_posts("m1")] == [8.0]
+    assert store.search_runs() == []                      # nothing was searched or billed

@@ -126,6 +126,22 @@ class SnowflakeStore(SqlStore):
             out.append(json.loads(row) if isinstance(row, str) else list(row))
         return out
 
+    def similarities(self, query: str, texts: list[str]) -> list[float]:
+        """Cosine similarity of AI_EMBED(query) with AI_EMBED(each text), one round trip."""
+        if not texts:
+            return []
+        model = self._model_literal(env("SNOWFLAKE_EMBED_MODEL", "snowflake-arctic-embed-m-v1.5"))
+        values = ", ".join("(?, ?)" for _ in texts)
+        params: list = [query]
+        for i, t in enumerate(texts):
+            params += [i, t or ""]
+        rows = self._query(
+            f"WITH q AS (SELECT AI_EMBED({model}, ?) AS e) "
+            f"SELECT v.column1 AS i, VECTOR_COSINE_SIMILARITY(q.e, AI_EMBED({model}, v.column2)) AS s "
+            f"FROM (VALUES {values}) v, q", params)
+        by_i = {int(r["i"]): float(r["s"]) for r in rows}
+        return [by_i.get(i, 0.0) for i in range(len(texts))]
+
     def complete(self, prompt: str, temperature: float = 0.0) -> str:
         model = self._model_literal(env("SNOWFLAKE_COMPLETE_MODEL", "claude-sonnet-4-5"))
         row = self._query(

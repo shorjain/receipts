@@ -264,6 +264,11 @@ class SqlStore:
                            "JOIN POSTS p ON p.post_id = mp.post_id WHERE mp.move_id = ? "
                            "ORDER BY p.posted_at", [move_id])
 
+    def insider_credibility(self, author: str) -> float | None:
+        rows = self._query("SELECT credibility_weight FROM INSIDER_SCORES WHERE author = ? "
+                           "AND score_window = 'season' ORDER BY season DESC LIMIT 1", [author])
+        return float(rows[0]["credibility_weight"]) if rows and rows[0]["credibility_weight"] is not None else None
+
     # ---- VENUE_GAPS --------------------------------------------------------
     def upsert_venue_gaps(self, rows: Iterable[dict]) -> int:
         return self.upsert("VENUE_GAPS", rows)

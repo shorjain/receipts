@@ -14,7 +14,7 @@ A personal NFL analytics app that answers two questions:
 | 3 | Odds ingestion (Kalshi + The Odds API) and move detection | done (Odds API path tested on a hand-built fixture until a key is added) |
 | 3b | Polymarket venue + Kalshi vs Polymarket gaps and lead-lag | done |
 | 4 | X sweeps + on-move searches with citation verification | done (embeddings run in Snowflake after each sync) |
-| 5 | Move explanations + Moves page | |
+| 5 | Move explanations + Moves page | done |
 | 6 | Claims, resolution, scores, Leaderboard + Insider pages | |
 | 7 | Season backfill | |
 | 8 | Win-probability model + Games page | |
@@ -46,7 +46,10 @@ python -m pipelines.detect_moves --hours 48         # write LINE_MOVES
 python -m pipelines.compare_venues --hours 48       # VENUE_GAPS + who moved first
 python -m pipelines.search_moves --hours 24         # X search around each new move
 python -m pipelines.sweep_insiders [--force]        # scheduled insider sweep
+python -m pipelines.explain_moves --hours 24        # grounded explanations (Snowflake Cortex)
 python -m pipelines.sync_snowflake                  # copy new local rows to Snowflake
+streamlit run app/Home.py                           # UI (reads data/ui_snapshot.duckdb)
+uvicorn api.main:app --reload                       # JSON API: /moves, /moves/{id}
 ```
 
 Probe scripts hit each API once and save a fixture to `tests/fixtures/`:
@@ -149,6 +152,37 @@ All X data comes from Grok's server-side `x_search` tool (`sources/xsearch.py`).
 - A search returns roughly 60 posts, so quiet accounts in a busy batch can be missed.
 
 **Handles.** `scripts/verify_handles.py` confirms each handle posted recently and that the account's display name matches the configured name. `--find` looks up the right handle by name, outlet and team; a beat reporter's posts must also mention their team, so same-named strangers don't pass. That corrected 21 of the beat handles written from memory. 67 of 70 are verified. AdamTeicher, DNewtonespn and agetzenberg remain unverified and are skipped.
+
+## Move explanations
+
+`pipelines/explain_moves.py` runs in the loop for every move whose posts have been linked:
+
+- **Scoring each linked post:**
+  - **relevance** is the embedding similarity between the post and the move's `summary_text` (`AI_EMBED`, one Snowflake query per move), rescaled from 0.65–0.90 to 0–1. It gets +0.15 when the post names either team or a player on either roster.
+  - **timing** is 1.0 for posts 0–20 minutes before the move, falling linearly to 0 at 60 minutes before. Posts after the move get 0.3 × e^(lead/10), since they report on the move rather than cause it.
+  - **attribution** = relevance × timing × `credibility_weight`, which is 0.5 until milestone 6 scores the insiders.
+- **No post before the move:** the move is marked "Unexplained: no insider news before this move", with no AI call. These are worth watching, since they may be sharp money or news from outside the tracked list.
+- **Otherwise:** a numbered evidence block (`[M1]` is the move with its numbers from SQL; `[P1]`… are the top 5 posts, each labeled with how many minutes before or AFTER the move it was posted) goes to `AI_COMPLETE` at temperature 0.
+- **Grounding guard** (`rag/guard.py`), applied to the reply:
+  - sentences with numbers not in the evidence are dropped;
+  - citations that aren't in the evidence are removed;
+  - causal claims with no cited post are dropped;
+  - posts published after the move can't be named as the cause;
+  - at most 3 sentences survive. If none do, the status is `refused` rather than inventing an explanation.
+
+With X search off, moves link only to posts already stored. A replay of Saturday Oct 24 showed one case clearly. The Ravens' win probability vs CIN fell 47.5% → 42.5% on both Kalshi and Polymarket, with Kalshi 8 minutes ahead. The tracked insiders' "Lamar Jackson ruled out" posts came 30 and 36 minutes after the move started. The market knew first, so the app marks the move unexplained and shows those posts as reporting on it.
+
+## UI and API
+
+DuckDB lets only one process open its file for writing, so the ingest loop writes a read-only copy, `data/ui_snapshot.duckdb`, every 5 minutes. The Streamlit pages (`app/`) and the FastAPI app (`api/main.py`) read that copy, so they never wake Snowflake.
+
+The **Moves** page lists every move:
+- game, market, before → after, venues, and which venue moved first;
+- the explanation;
+- a chart of each venue's series around the window, with the move shaded and post times marked;
+- the top posts as cards with links to X.
+
+Filters: days back, week, team, venue, and explained, unexplained or pending.
 
 ## Move detection
 

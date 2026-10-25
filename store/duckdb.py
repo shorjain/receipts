@@ -18,10 +18,10 @@ class DuckDBStore(SqlStore):
         "TS": "TIMESTAMP", "JSON": "JSON", "VEC": f"FLOAT[{EMBED_DIM}]",
     }
 
-    def __init__(self, path: str | Path = ":memory:"):
-        if path != ":memory:":
+    def __init__(self, path: str | Path = ":memory:", read_only: bool = False):
+        if path != ":memory:" and not read_only:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.con = duckdb.connect(str(path))
+        self.con = duckdb.connect(str(path), read_only=read_only)
 
     def _execute(self, sql: str, params: Sequence | None = None) -> None:
         self.con.execute(sql, params or [])
@@ -40,6 +40,21 @@ class DuckDBStore(SqlStore):
         if col_type == JSON:
             return f"CAST({expr} AS JSON)"
         return expr
+
+    def snapshot(self, dest: str | Path) -> Path:
+        """Copy the whole database to `dest` atomically. DuckDB lets only one process
+        open a file for writing, so the UI and API read this copy instead."""
+        dest = Path(dest)
+        tmp = dest.with_suffix(".tmp")
+        tmp.unlink(missing_ok=True)
+        db = self.con.execute("SELECT current_database()").fetchone()[0]
+        self.con.execute(f"ATTACH '{tmp}' AS ui_snap")
+        try:
+            self.con.execute(f"COPY FROM DATABASE {db} TO ui_snap")
+        finally:
+            self.con.execute("DETACH ui_snap")
+        tmp.replace(dest)
+        return dest
 
     def close(self) -> None:
         self.con.close()

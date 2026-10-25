@@ -58,3 +58,17 @@ def test_sync_copies_only_new_rows_and_skips_embeddings(store):
     assert sync(store, remote, now=T0 + timedelta(minutes=4)) == {"GAMES": 1}
     assert remote.get_games()[0]["home_score"] == 7
     assert remote.sync_state() == {}          # bookkeeping stays local
+
+
+def test_snapshot_is_a_readable_copy(tmp_path):
+    from store.duckdb import DuckDBStore
+    src = DuckDBStore(tmp_path / "main.duckdb")
+    src.create_schema()
+    src.upsert_games([{"game_id": "g1", "season": 2026}])
+    src.snapshot(tmp_path / "snap.duckdb")
+    src.upsert_games([{"game_id": "g2", "season": 2026}])      # writer keeps going
+    ro = DuckDBStore(tmp_path / "snap.duckdb", read_only=True)
+    assert [g["game_id"] for g in ro.get_games()] == ["g1"]
+    ro.close()
+    src.snapshot(tmp_path / "snap.duckdb")
+    assert len(DuckDBStore(tmp_path / "snap.duckdb", read_only=True).get_games()) == 2

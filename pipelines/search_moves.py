@@ -7,6 +7,7 @@ searching again. lead_minutes = move start - post time (negative = posted after)
 relevance and attribution_score are filled by explain_moves (milestone 5).
 
 explain_status: pending -> searched (or stays pending when the budget is spent).
+With X search off (XAI_ENABLED=false) moves are linked to already-stored posts only.
 
 Run:  python -m pipelines.search_moves --hours 24
 """
@@ -44,6 +45,7 @@ def recently_searched(store, game_id: str, window_end: datetime, now: datetime) 
 
 def run(store, client, hours: float = 24, now: datetime | None = None,
         include_unverified: bool = False) -> int:
+    """client=None (X search off) links only posts already stored, e.g. from sweeps."""
     now = now or utcnow()
     games = {g["game_id"]: g for g in store.games_between(now - timedelta(days=3), now + timedelta(days=10))}
     moves = [m for m in store.line_moves(now - timedelta(hours=hours), now, explain_status="pending")
@@ -54,7 +56,7 @@ def run(store, client, hours: float = 24, now: datetime | None = None,
         g = games.get(m["game_id"])
         handles = insiders.for_teams({g["home"], g["away"]} if g else set(), include_unverified)
         start, end = m["window_start"] - PRE_WINDOW, m["window_end"]
-        if recently_searched(store, m["game_id"], end, now):
+        if client is None or recently_searched(store, m["game_id"], end, now):
             posts = store.posts_in_window(start, end, handles)
         else:
             focus = f"{g['away']} at {g['home']}" if g else None

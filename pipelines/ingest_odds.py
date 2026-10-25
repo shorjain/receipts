@@ -219,6 +219,8 @@ def main() -> None:
     ap.add_argument("--force-odds-api", action="store_true")
     ap.add_argument("--analyze-every", type=float, default=10,
                     help="minutes between detect_moves + compare_venues runs in --loop (0 = never)")
+    ap.add_argument("--snapshot-every", type=float, default=5,
+                    help="minutes between read-only snapshots for the UI/API (0 = never)")
     ap.add_argument("--no-odds-api", action="store_true",
                     help="don't poll The Odds API (e.g. to save free-tier credits)")
     ap.add_argument("--no-x", action="store_true", help="skip all X searches in --loop")
@@ -230,9 +232,9 @@ def main() -> None:
     store.create_schema()
     if args.loop:
         period = env_int("KALSHI_POLL_SECONDS", 60)
-        from pipelines import compare_venues, detect_moves, search_moves, sweep_insiders, sync_snowflake
+        from pipelines import compare_venues, detect_moves, explain_moves, search_moves, sweep_insiders, sync_snowflake
         pm_poller = PolymarketPoller()
-        last_analysis = last_sync = 0.0
+        last_analysis = last_sync = last_snapshot = 0.0
         can_sync = store.dialect == "duckdb" and bool(env("SNOWFLAKE_ACCOUNT")) and args.sync_every > 0
         x_client = None
         if env("XAI_API_KEY") and env_bool("XAI_ENABLED", True) and not args.no_x:
@@ -245,8 +247,16 @@ def main() -> None:
                 try:
                     detect_moves.run(store, hours=24)
                     compare_venues.run(store, hours=24)
-                    if x_client:
-                        search_moves.run(store, x_client, hours=24)
+                    search_moves.run(store, x_client, hours=24)  # x_client None: stored posts only
+                    if store.line_moves(datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24),
+                                        explain_status="searched"):
+                        ai = explain_moves.get_ai()  # Snowflake Cortex; woken only when needed
+                        if ai:
+                            try:
+                                explain_moves.run(store, ai, hours=24)
+                            finally:
+                                ai.suspend_warehouse()
+                                ai.close()
                 except Exception as e:
                     log.error("analysis failed: %s", e)
                 last_analysis = started
@@ -255,6 +265,13 @@ def main() -> None:
                     sweep_insiders.run(store, x_client)  # no-op unless due
                 except Exception as e:
                     log.error("sweep failed: %s", e)
+            if store.dialect == "duckdb" and args.snapshot_every and started - last_snapshot >= args.snapshot_every * 60:
+                try:
+                    from store import snapshot_path
+                    store.snapshot(snapshot_path())
+                except Exception as e:
+                    log.error("UI snapshot failed: %s", e)
+                last_snapshot = started
             if can_sync and started - last_sync >= args.sync_every * 60:
                 try:
                     sync_snowflake.run(store)

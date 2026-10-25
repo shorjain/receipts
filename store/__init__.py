@@ -18,4 +18,19 @@ def get_store(backend: str | None = None) -> SqlStore:
     raise ValueError(f"unknown STORE_BACKEND: {backend}")
 
 
-__all__ = ["get_store", "SqlStore"]
+def snapshot_path():
+    return ROOT / env("UI_SNAPSHOT_PATH", "data/ui_snapshot.duckdb")
+
+
+def get_read_store() -> SqlStore:
+    """Read-only store for the UI and API: the loop's latest snapshot when it exists,
+    else the main DuckDB file (only works while the loop isn't running)."""
+    from .duckdb import DuckDBStore
+    snap = snapshot_path()
+    if snap.exists():
+        return DuckDBStore(snap, read_only=True)
+    path = env("DUCKDB_PATH", "data/nfl_lines.duckdb")
+    return DuckDBStore(path if path.startswith("/") else ROOT / path, read_only=True)
+
+
+__all__ = ["get_store", "get_read_store", "snapshot_path", "SqlStore"]
