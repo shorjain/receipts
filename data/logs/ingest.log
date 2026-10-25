@@ -1,0 +1,10 @@
+2026-10-25 19:40:51,798 INFO ingest_odds: kalshi: 673 markets, stored 3/673 snapshots
+2026-10-25 19:41:00,833 INFO ingest_odds: polymarket: 1054 markets, stored 10/1054 snapshots
+2026-10-25 19:41:02,323 INFO detect_moves: detected 18 moves (0 multi-venue)
+2026-10-25 19:41:03,802 INFO compare_venues: venue comparison: {'moves_both_reacted': 0, 'polymarket_first': 0, 'kalshi_first': 0, 'same_minute': 0, 'median_polymarket_lead_minutes': None, 'gaps': 3, 'gaps_moved_by_kalshi': 0, 'gaps_kalshi_led_and_was_followed': 0, 'gaps_moved_by_polymarket': 2, 'gaps_polymarket_led_and_was_followed': 1}
+2026-10-25 19:41:03,907 WARNING search_x: xAI daily budget reached; skipping move search for ['AdamSchefter', 'RapSheet', 'TomPelissero', 'MikeGarafolo', 'DMRussini', 'JFowlerESPN', 'Schultz_Report', 'FieldYates', 'MaryKayCabot', 'AkronJackson']
+2026-10-25 19:41:03,908 WARNING search_moves: budget spent; move 73edf3c4b95bf999 stays pending
+2026-10-25 19:41:03,909 INFO search_moves: searched 0/12 pending moves
+2026-10-25 19:41:09,029 INFO backfill: planned 228 new backfill tasks for 102 finished games
+2026-10-25 19:41:30,879 INFO backfill: backfill: 6 tasks done this slice, 222 left
+2026-10-25 19:41:33,335 WARNING snowflake.connector._core: Proxy configuration: using environment variable proxy settings

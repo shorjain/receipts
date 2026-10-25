@@ -57,6 +57,19 @@ streamlit run app/Home.py                           # UI (reads data/ui_snapshot
 uvicorn api.main:app --reload                       # JSON API: /moves, /moves/{id}, /ask?q=
 ```
 
+### Run it in the background (macOS)
+
+```bash
+python -m scripts.service install
+```
+
+This installs a per-user LaunchAgent (`~/Library/LaunchAgents/com.nfl-lines.ingest.plist`) that runs `ingest_odds --loop`:
+- it starts at login and restarts the loop if it exits (at most once a minute);
+- it runs under `caffeinate -s`, so the Mac stays awake only while plugged in; on battery it sleeps normally and the loop pauses;
+- it logs to `data/logs/ingest.log` (rotated at 10 MB, 5 files).
+
+`python -m scripts.service status`, `logs` and `uninstall` do what they say. Only one process may write the DuckDB file, so stop any terminal loop before installing; the UI and API read the snapshot and can run alongside.
+
 Probe scripts hit each API once and save a fixture to `tests/fixtures/`:
 
 ```bash
@@ -391,6 +404,7 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `ASK_STORE` | `snowflake` | where Ask retrieves from: `snowflake` (vector ranking) or `local` (fresher snapshot) |
 | `RAW_DATA_DIR` | `data/raw` | Parquet copies |
 | `LOG_LEVEL` | `INFO` | |
+| `LOG_FILE` | | write logs to this file with rotation (set by the background service) |
 
 ## Costs
 
