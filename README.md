@@ -187,6 +187,7 @@ With X search off, moves link only to posts already stored. A replay of Saturday
 | Task | What it does | Cost |
 |---|---|---|
 | `kalshi:<game>` | 1-minute candles for both teams' winner markets, from market open (at most 14 days) to kickoff, fetched 3 days per call (Kalshi's limit is ~5,000 candles). Turned into the same normalized P(home win) series live polling stores, with the home market's bid/ask and rolling 24 h volume | free |
+| `kalshi_spread:<game>`, `kalshi_total:<game>` | 1-minute candles for the ladder rungs within 4 points of the game's closing line (about 15 rungs a game instead of ~45), rebuilt minute by minute into the same derived lines, with their rung sets, that live polling stores. Finishing one reopens the game's detection | free |
 | `poly:<game>` | Polymarket's minute price history for the moneyline. It has no bid/ask or volume to check, so it's stored as `polymarket_history`, which can **confirm** a Kalshi move (making it multi-venue) but never creates a move alone | free |
 | `detect:<game>` | after both fetches: move detection and venue comparison for the game's pre-kickoff window, then one search task per new move | free |
 | `search:<move>` | X search around the past move (with `to_date` = the next day, which works for past windows), biggest and multi-venue moves first, while `BACKFILL_XAI_USD` (default $3) and the daily cap allow. After that, moves are linked to posts already stored. The loop's explain step then explains them, whatever their age | xAI, capped |

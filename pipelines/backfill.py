@@ -5,6 +5,11 @@ so stopping and restarting picks up where it left off.
   kalshi:<game>   1-minute Kalshi candles for both teams' winner markets, from the
                   market's open to kickoff, turned into the same derived P(home win)
                   series live polling stores (kalshi:<game>:winner)
+  kalshi_spread:<game>, kalshi_total:<game>
+                  1-minute candles for the spread / total ladder rungs within 4 points
+                  of the game's closing line, rebuilt minute by minute into the same
+                  derived lines live polling stores (with their rung sets); finishing
+                  one reopens that game's detect task
   poly:<game>     Polymarket's minute price history for the game's moneyline
   detect:<game>   once both fetches are done: detect moves and compare venues for that
                   game's pre-kickoff window, then queue a search task per new move
@@ -46,8 +51,14 @@ log = get_logger("backfill")
 CANDLE_CHUNK = timedelta(days=3)          # Kalshi returns at most ~5,000 candles per call
 MAX_LOOKBACK = timedelta(days=14)         # earliest data fetched before a kickoff
 REPLAN_EVERY = timedelta(hours=12)
+PLAN_VERSION = 2              # bump when a new task kind is added, so existing backfills replan
 HEARTBEAT = timedelta(minutes=10)
-KIND_PRIORITY = {"kalshi": 4, "poly": 4, "detect": 3, "oddsapi": 2, "search": 1}
+KIND_PRIORITY = {"kalshi": 4, "poly": 4, "kalshi_spread": 3.5, "kalshi_total": 3.5, "detect": 3, "oddsapi": 2,
+                 "search": 1}
+FETCH_KINDS = ("kalshi", "poly", "kalshi_spread", "kalshi_total")
+LADDER_SERIES = {"kalshi_spread": "KXNFLSPREAD", "kalshi_total": "KXNFLTOTAL"}
+RUNG_WINDOW = 4.0            # fetch ladder rungs within this many points of the closing line
+QUOTE_STALE = timedelta(minutes=60)
 
 
 def _ts(epoch: float) -> datetime:
@@ -118,6 +129,19 @@ def plan(store, kc, pc, now: datetime, season: int) -> int:
             d = by_game.setdefault(g["game_id"], {"tickers": {}, "open": m.get("open_time")})
             d["tickers"][side] = m["ticker"]
             d["open"] = min(d["open"] or m["open_time"], m["open_time"])
+    ladders: dict[tuple[str, str], dict] = {}
+    for kind, series in LADDER_SERIES.items():
+        for m in kc.list_markets(series, status="settled"):
+            g = kalshi.match_game(m["event_ticker"], games)
+            strike = m.get("floor_strike")
+            if not g or strike is None:
+                continue
+            side = "over" if kind == "kalshi_total" else kalshi.team_from_ticker(m["ticker"])
+            if not rung_near_close(kind, g, side, float(strike)):
+                continue
+            d = ladders.setdefault((kind, g["game_id"]), {"rungs": [], "open": m.get("open_time")})
+            d["rungs"].append({"ticker": m["ticker"], "side": side, "strike": float(strike)})
+            d["open"] = min(d["open"] or m["open_time"], m["open_time"])
     first = min(g["kickoff_at"] for g in games) - MAX_LOOKBACK
     poly: dict[str, dict] = {}
     for m in pc.gamma_markets("moneyline", first, now, closed=True):
@@ -134,6 +158,14 @@ def plan(store, kc, pc, now: datetime, season: int) -> int:
                             "priority": KIND_PRIORITY[kind] + recency,
                             "status": "pending" if detail else "skipped", "detail": detail or {},
                             "note": None if detail else "no market found"})
+        for kind in LADDER_SERIES:
+            tid = f"{kind}:{g['game_id']}"
+            detail = ladders.get((kind, g["game_id"]))
+            if tid not in known:
+                new.append({"task_id": tid, "kind": kind, "game_id": g["game_id"],
+                            "priority": KIND_PRIORITY[kind] + recency,
+                            "status": "pending" if detail else "skipped", "detail": detail or {},
+                            "note": None if detail else "no ladder found"})
         tid = f"detect:{g['game_id']}"
         if tid not in known:
             new.append({"task_id": tid, "kind": "detect", "game_id": g["game_id"],
@@ -147,9 +179,24 @@ def plan(store, kc, pc, now: datetime, season: int) -> int:
                 new.append({"task_id": tid, "kind": "oddsapi", "game_id": None, "status": "pending",
                             "priority": KIND_PRIORITY["oddsapi"], "detail": {"day": str(d)}})
     store.upsert_backfill_tasks(new + [{"task_id": "plan", "kind": "plan", "status": "done",
-                                         "priority": 0, "detail": {"at": now.isoformat()}}])
+                                         "priority": 0, "detail": {"at": now.isoformat(), "v": PLAN_VERSION}}])
     log.info("planned %d new backfill tasks for %d finished games", len(new), len(games))
     return len(new)
+
+
+def rung_near_close(kind: str, game: dict, side: str | None, strike: float) -> bool:
+    """Keep rungs within RUNG_WINDOW of the closing line (all rungs if there's no close).
+    Spread rungs are "<side> wins by over <strike>"; the close is in home betting
+    convention, so the home team's expected margin is -close_spread_line."""
+    if kind == "kalshi_total":
+        close = game.get("close_total_line")
+        return close is None or abs(strike - close) <= RUNG_WINDOW
+    close = game.get("close_spread_line")
+    if close is None:
+        return True
+    margin = -close
+    threshold = strike if side == game["home"] else -strike if side == game["away"] else None
+    return threshold is not None and abs(threshold - margin) <= RUNG_WINDOW
 
 
 # ---- tasks ---------------------------------------------------------------------------
@@ -183,6 +230,85 @@ def fetch_kalshi(store, kc, task: dict, game: dict) -> int:
     store.insert_odds_snapshots([{"market_id": mid, "taken_at": r["t"], "implied_prob": r["p"], "price": None,
                                   "line": None, "bid": r["bid"], "ask": r["ask"], "volume": r["volume"],
                                   "source": "kalshi_derived"} for r in rows])
+    return len(rows)
+
+
+def ladder_series(rung_candles: dict[str, list[dict]], rungs: list[dict], game: dict, mtype: str,
+                  max_spread: float, min_volume: float) -> list[dict]:
+    """Rebuild the derived line minute by minute from each rung's candles."""
+    from sources import ladder
+    quotes: dict[str, list[tuple[int, float, float, float]]] = {}
+    for r in rungs:
+        rows, window, vol = [], deque(), 0.0
+        for c in sorted(rung_candles.get(r["ticker"], []), key=lambda c: c["end_period_ts"]):
+            b, a = c["yes_bid"].get("close_dollars"), c["yes_ask"].get("close_dollars")
+            v = float(c.get("volume_fp") or 0)
+            window.append((c["end_period_ts"], v))
+            vol += v
+            while window and window[0][0] <= c["end_period_ts"] - 86400:
+                vol -= window.popleft()[1]
+            if b is not None and a is not None:
+                rows.append((c["end_period_ts"], float(b), float(a), vol))
+        quotes[r["ticker"]] = rows
+    stale = QUOTE_STALE.total_seconds()
+    idx = {t: 0 for t in quotes}
+    out = []
+    for ts in sorted({q[0] for rows in quotes.values() for q in rows}):
+        items = []
+        for r in rungs:
+            rows = quotes[r["ticker"]]
+            i = idx[r["ticker"]]
+            while i + 1 < len(rows) and rows[i + 1][0] <= ts:
+                i += 1
+            idx[r["ticker"]] = i
+            if rows and rows[i][0] <= ts and ts - rows[i][0] <= stale:
+                _, b, a, v = rows[i]
+                items.append(({"bid": b, "ask": a, "mid": (a + b) / 2, "price": None, "volume": v,
+                               "strike": r["strike"]}, r["side"]))
+        d = ladder.derive(game, mtype, items, max_spread, min_volume) if items else None
+        if d:
+            out.append({"t": _ts(ts), **d})
+    return out
+
+
+def thin_lines(rows: list[dict], min_change: float = 0.1) -> list[dict]:
+    """Keep a line when it moves >= min_change, its rungs change, or HEARTBEAT passes."""
+    kept: list[dict] = []
+    for r in rows:
+        last = kept[-1] if kept else None
+        if (last is None or abs(r["line"] - last["line"]) >= min_change - 1e-9 or r["rungs"] != last["rungs"]
+                or r["t"] - last["t"] >= HEARTBEAT):
+            kept.append(r)
+    return kept
+
+
+def fetch_ladder(store, kc, task: dict, game: dict) -> int:
+    mtype = "spread" if task["kind"] == "kalshi_spread" else "total"
+    series = LADDER_SERIES[task["kind"]]
+    d = _detail(task)
+    open_at = datetime.fromisoformat(d["open"].replace("Z", "+00:00")).replace(tzinfo=None) if d.get("open") else None
+    start = max(open_at or game["kickoff_at"] - MAX_LOOKBACK, game["kickoff_at"] - MAX_LOOKBACK)
+    candles: dict[str, list[dict]] = {}
+    for r in d["rungs"]:
+        s, got = start, []
+        while s < game["kickoff_at"]:
+            e = min(s + CANDLE_CHUNK, game["kickoff_at"])
+            got += kc.candlesticks(series, r["ticker"], s, e, 1)
+            s = e
+        candles[r["ticker"]] = got
+    rows = thin_lines(ladder_series(candles, d["rungs"], game, mtype, env_float("KALSHI_MAX_SPREAD", 0.04),
+                                    env_float("KALSHI_MIN_VOLUME", 500)))
+    write_raw(f"backfill_kalshi_{mtype}", rows, name=game["game_id"])
+    mid = f"kalshi:{game['game_id']}:{mtype}"
+    store.upsert_markets([{"market_id": mid, "venue": "kalshi", "game_id": game["game_id"], "market_type": mtype,
+                           "line": None, "side": "over" if mtype == "total" else "home", "source_ref": "derived"}])
+    store.insert_odds_snapshots([{"market_id": mid, "taken_at": r["t"], "implied_prob": None, "price": None,
+                                  "line": r["line"], "bid": r["bid"], "ask": r["ask"], "volume": r["volume"],
+                                  "rungs": r["rungs"], "source": "kalshi_derived"} for r in rows])
+    # spread/total data arrived after this game's detection may have run: redo it
+    det = next((t for t in store.backfill_tasks(kind="detect") if t["game_id"] == game["game_id"]), None)
+    if det and det["status"] == "done":
+        store.upsert_backfill_tasks([{**det, "status": "pending", "note": f"redo: {mtype} ladder added"}])
     return len(rows)
 
 
@@ -273,9 +399,11 @@ def _run_task(store, task: dict, game: dict | None, now: datetime) -> bool:
             note = f"{fetch_kalshi(store, _client('kalshi'), task, game)} points"
         elif task["kind"] == "poly":
             note = f"{fetch_poly(store, _client('poly'), task, game)} points"
+        elif task["kind"] in LADDER_SERIES:
+            note = f"{fetch_ladder(store, _client('kalshi'), task, game)} lines"
         elif task["kind"] == "detect":
             fetches = [t for t in store.backfill_tasks() if t["game_id"] == task["game_id"]
-                       and t["kind"] in ("kalshi", "poly")]
+                       and t["kind"] in FETCH_KINDS]
             if any(t["status"] == "pending" for t in fetches):
                 return False
             note = f"{run_detect(store, game, now)} moves"
@@ -331,7 +459,8 @@ def step(store, seconds: float = 20, now: datetime | None = None, season: int | 
         season = nflreadpy.get_current_season()
     planned = next(iter(store.backfill_tasks(kind="plan")), None)
     at = _detail(planned).get("at") if planned else None
-    if at is None or now - datetime.fromisoformat(at) >= REPLAN_EVERY:
+    stale_plan = planned is not None and _detail(planned).get("v") != PLAN_VERSION
+    if at is None or stale_plan or now - datetime.fromisoformat(at) >= REPLAN_EVERY:
         plan(store, _client("kalshi"), _client("poly"), now, season)
     started, done = time.time(), 0
     games = {g["game_id"]: g for g in store.get_games(season)}

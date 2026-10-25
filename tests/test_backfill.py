@@ -112,3 +112,42 @@ def test_migration_drops_polymarket_only_moves_and_redoes_detection(store):
     assert store.odds_series(KO - timedelta(days=1), KO)[0]["source"] == "polymarket_history"
     bf.migrate_v2(store, {GAME["game_id"]: GAME})          # runs once only
     assert {t["task_id"]: t["status"] for t in store.backfill_tasks()}["detect:2026_07_DAL_GB"] == "pending"
+
+
+def test_rung_selection_near_the_close():
+    g = {**GAME, "close_spread_line": -3.0, "close_total_line": 45.5}          # GB favored by 3
+    assert bf.rung_near_close("kalshi_spread", g, "GB", 2.5)                  # home by > 2.5
+    assert bf.rung_near_close("kalshi_spread", g, "DAL", 0.5)                 # away by > 0.5 -> margin < -0.5
+    assert not bf.rung_near_close("kalshi_spread", g, "GB", 13.5)
+    assert not bf.rung_near_close("kalshi_spread", g, "DAL", 7.5)             # margin -7.5 is 10.5 off
+    assert bf.rung_near_close("kalshi_total", g, "over", 48.5) and not bf.rung_near_close("kalshi_total", g, "over", 52.5)
+    assert bf.rung_near_close("kalshi_total", {**g, "close_total_line": None}, "over", 70.5)
+
+
+def test_ladder_series_rebuilds_the_spread_line_and_rungs():
+    t0 = KO - timedelta(hours=3)
+    rungs = [{"ticker": "GB2", "side": "GB", "strike": 2.5}, {"ticker": "GB4", "side": "GB", "strike": 4.5}]
+    def c(m, bid):
+        return candle(t0 + timedelta(minutes=m), bid, bid + .01, 1000)
+    candles = {"GB2": [c(0, .60), c(30, .65)], "GB4": [c(0, .40), c(30, .45)]}
+    rows = bf.ladder_series(candles, rungs, GAME, "spread", 0.04, 500)
+    assert [r["t"] for r in rows] == [t0, t0 + timedelta(minutes=30)]
+    assert rows[0]["line"] == pytest.approx(-3.55, abs=0.01)                   # median margin ~3.55
+    assert rows[1]["line"] == pytest.approx(-4.05, abs=0.01)                   # market moved half a point
+    assert rows[0]["rungs"] == "2.5,4.5"
+    kept = bf.thin_lines(rows + [{**rows[1], "t": rows[1]["t"] + timedelta(minutes=1), "line": rows[1]["line"] + 0.05}])
+    assert len(kept) == 2                                                      # tiny wiggle dropped
+
+
+def test_finished_ladder_reopens_detection(store):
+    store.upsert_games([{**GAME, "close_spread_line": -3.0}])
+    store.upsert_backfill_tasks([{"task_id": "detect:2026_07_DAL_GB", "kind": "detect", "game_id": GAME["game_id"],
+                                  "status": "done", "priority": 3}])
+
+    class K:
+        def candlesticks(self, series, ticker, s, e, p):
+            return []
+    task = {"task_id": "kalshi_spread:2026_07_DAL_GB", "kind": "kalshi_spread", "game_id": GAME["game_id"],
+            "detail": {"rungs": [{"ticker": "x", "side": "GB", "strike": 2.5}], "open": "2026-10-10T00:00:00Z"}}
+    bf.fetch_ladder(store, K(), task, {**GAME, "close_spread_line": -3.0})
+    assert store.backfill_tasks(kind="detect")[0]["status"] == "pending"
