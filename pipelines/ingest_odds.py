@@ -224,6 +224,8 @@ def main() -> None:
                     help="minutes between detect_moves + compare_venues runs in --loop (0 = never)")
     ap.add_argument("--snapshot-every", type=float, default=5,
                     help="minutes between read-only snapshots for the UI/API (0 = never)")
+    ap.add_argument("--backfill-seconds", type=float, default=20,
+                    help="seconds of season backfill per loop iteration (0 = off)")
     ap.add_argument("--resolve-every", type=float, default=360,
                     help="minutes between nflverse refresh + claim resolution + scoring (0 = never)")
     ap.add_argument("--no-odds-api", action="store_true",
@@ -237,7 +239,7 @@ def main() -> None:
     store.create_schema()
     if args.loop:
         period = env_int("KALSHI_POLL_SECONDS", 60)
-        from pipelines import (compare_venues, detect_moves, explain_moves, extract_claims, load_nflverse,
+        from pipelines import (backfill, compare_venues, detect_moves, explain_moves, extract_claims, load_nflverse,
                                resolve_claims, score_insiders, search_moves, sweep_insiders, sync_snowflake)
         pm_poller = PolymarketPoller()
         last_analysis = last_sync = last_snapshot = last_resolve = 0.0
@@ -254,18 +256,23 @@ def main() -> None:
                     detect_moves.run(store, hours=24)
                     compare_venues.run(store, hours=24)
                     search_moves.run(store, x_client, hours=24)  # x_client None: stored posts only
-                    if store.line_moves(datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24),
-                                        explain_status="searched"):
+                    # any age: backfilled moves get explained too
+                    if store.line_moves(explain_status="searched"):
                         ai = explain_moves.get_ai()  # Snowflake Cortex; woken only when needed
                         if ai:
                             try:
-                                explain_moves.run(store, ai, hours=24)
+                                explain_moves.run(store, ai, hours=24 * 365)
                             finally:
                                 ai.suspend_warehouse()
                                 ai.close()
                 except Exception as e:
                     log.error("analysis failed: %s", e)
                 last_analysis = started
+            if args.backfill_seconds and env_bool("BACKFILL_ENABLED", True):
+                try:  # a short slice of season backfill each minute (resumable)
+                    backfill.step(store, seconds=args.backfill_seconds)
+                except Exception as e:
+                    log.error("backfill slice failed: %s", e)
             if x_client and not args.no_sweeps:
                 try:
                     sweep_insiders.run(store, x_client)  # no-op unless due

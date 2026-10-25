@@ -16,7 +16,7 @@ A personal NFL analytics app that answers two questions:
 | 4 | X sweeps + on-move searches with citation verification | done (embeddings run in Snowflake after each sync) |
 | 5 | Move explanations + Moves page | done |
 | 6 | Claims, resolution, scores, Leaderboard + Insider pages | |
-| 7 | Season backfill | |
+| 7 | Season backfill | done (runs in the loop, resumable) |
 | 8 | Win-probability model + Games page | |
 | 9 | Ask chatbot | |
 | 10 | DuckDB fallback store (local embeddings + Ollama) | base tables done early; AI functions pending |
@@ -50,6 +50,7 @@ python -m pipelines.explain_moves --hours 24        # grounded explanations (Sno
 python -m pipelines.extract_claims                  # claims from new posts (Cortex structured output)
 python -m pipelines.resolve_claims                  # check claims against nflverse
 python -m pipelines.score_insiders                  # INSIDER_SCORES + credibility weights
+python -m pipelines.backfill --status               # season backfill progress (loop stopped)
 python -m pipelines.sync_snowflake                  # copy new local rows to Snowflake
 streamlit run app/Home.py                           # UI (reads data/ui_snapshot.duckdb)
 uvicorn api.main:app --reload                       # JSON API: /moves, /moves/{id}
@@ -177,6 +178,20 @@ All X data comes from Grok's server-side `x_search` tool (`sources/xsearch.py`).
 
 With X search off, moves link only to posts already stored. A replay of Saturday Oct 24 showed one case clearly. The Ravens' win probability vs CIN fell 47.5% → 42.5% on both Kalshi and Polymarket, with Kalshi 8 minutes ahead. The tracked insiders' "Lamar Jackson ruled out" posts came 30 and 36 minutes after the move started. The market knew first, so the app marks the move unexplained and shows those posts as reporting on it.
 
+## Season backfill
+
+`pipelines/backfill.py` gives the app this season's history. It runs inside the loop, about 20 seconds per minute (`--backfill-seconds`), so live polling continues and the loop stays the only DuckDB writer. Each unit of work is a task in `BACKFILL_STATE`, and a finished task is never redone, so the backfill resumes wherever it stopped. It replans every 12 hours to pick up newly finished games.
+
+| Task | What it does | Cost |
+|---|---|---|
+| `kalshi:<game>` | 1-minute candles for both teams' winner markets, from market open (at most 14 days) to kickoff, fetched 3 days per call (Kalshi's limit is ~5,000 candles). Turned into the same normalized P(home win) series live polling stores, with the home market's bid/ask and rolling 24 h volume | free |
+| `poly:<game>` | Polymarket's minute price history for the moneyline. It has no bid/ask or volume, so it's treated as liquid | free |
+| `detect:<game>` | after both fetches: move detection and venue comparison for the game's pre-kickoff window, then one search task per new move | free |
+| `search:<move>` | X search around the past move (with `to_date` = the next day, which works for past windows), biggest and multi-venue moves first, while `BACKFILL_XAI_USD` (default $3) and the daily cap allow. After that, moves are linked to posts already stored. The loop's explain step then explains them, whatever their age | xAI, capped |
+| `oddsapi:<day>` | optional, `BACKFILL_ODDS_API_CREDITS` > 0: one historical snapshot per game day at noon ET | 30 credits each; off by default |
+
+The Odds API part is off by default because at 30 credits per snapshot the free tier buys about 15 snapshots a month. That's too few to detect book moves, and nflverse already provides closing lines for the model benchmark. Backfilled prices are stored like live ones: a point is kept when it moves ≥ 0.5 pp or 10 minutes pass.
+
 ## Insider credibility
 
 **Claim extraction** (`pipelines/extract_claims.py`, hourly in the loop) sends new posts in batches of 15 to `AI_COMPLETE` with structured output. Each reply is a JSON list matching the CLAIMS schema: player, team, type, predicted value, hedging (confirmed / expected / rumor), who the post credits, and the quoted words.
@@ -274,6 +289,9 @@ A replay of the last 24 hours of Kalshi 1-minute candles (27 games, Oct 24–25 
 | `XAI_TIMEOUT_SECONDS` | `120` | per-call timeout |
 | `XAI_MOVE_COOLDOWN_MINUTES` | `15` | min gap between searches for one game |
 | `TRADING_ENABLED`, `DRY_RUN`, `KALSHI_ENV`, `MAX_ORDER_USD`, `MAX_DAILY_USD`, `MAX_OPEN_EXPOSURE_USD`, `KILL_SWITCH_FILE` | off / dry / demo | optional trading module |
+| `BACKFILL_ENABLED` | `true` | run season backfill slices in the loop |
+| `BACKFILL_XAI_USD` | `3.0` | total xAI spend for searching past moves |
+| `BACKFILL_ODDS_API_CREDITS` | `0` | credits for historical Odds API snapshots (30 each) |
 | `RAW_DATA_DIR` | `data/raw` | Parquet copies |
 | `LOG_LEVEL` | `INFO` | |
 

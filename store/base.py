@@ -306,6 +306,18 @@ class SqlStore:
             sql += " AND score_window = ?"; params.append(score_window)
         return self._query(sql + " ORDER BY credibility_weight DESC", params)
 
+    # ---- BACKFILL_STATE ----------------------------------------------------
+    def backfill_tasks(self, status: str | None = None, kind: str | None = None) -> list[dict]:
+        sql, params = "SELECT * FROM BACKFILL_STATE WHERE 1=1", []
+        if status:
+            sql += " AND status = ?"; params.append(status)
+        if kind:
+            sql += " AND kind = ?"; params.append(kind)
+        return self._query(sql + " ORDER BY priority DESC, task_id", params)
+
+    def upsert_backfill_tasks(self, rows: Iterable[dict]) -> int:
+        return self.upsert("BACKFILL_STATE", rows)
+
     # ---- VENUE_GAPS --------------------------------------------------------
     def upsert_venue_gaps(self, rows: Iterable[dict]) -> int:
         return self.upsert("VENUE_GAPS", rows)

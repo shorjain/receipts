@@ -53,11 +53,12 @@ class PolymarketClient:
             r.raise_for_status()
             return r.json()
 
-    def gamma_markets(self, sports_market_type: str, end_min: datetime, end_max: datetime) -> list[dict]:
+    def gamma_markets(self, sports_market_type: str, end_min: datetime, end_max: datetime,
+                      closed: bool = False) -> list[dict]:
         out, offset = [], 0
         while True:
             page = self._req("GET", f"{GAMMA}/markets", params={
-                "closed": "false", "tag_id": NFL_TAG_ID, "sports_market_types": sports_market_type,
+                "closed": str(closed).lower(), "tag_id": NFL_TAG_ID, "sports_market_types": sports_market_type,
                 "end_date_min": end_min.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "end_date_max": end_max.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "limit": 100, "offset": offset,

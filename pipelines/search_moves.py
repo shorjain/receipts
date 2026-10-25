@@ -43,6 +43,27 @@ def recently_searched(store, game_id: str, window_end: datetime, now: datetime) 
     return False
 
 
+def process_move(store, client, m: dict, game: dict | None, now: datetime, purpose: str = "move",
+                 include_unverified: bool = False) -> bool:
+    """Search (or, with client None, look up stored posts) for one move and link them.
+    Returns False when the budget stopped the search (the move stays pending)."""
+    handles = insiders.for_teams({game["home"], game["away"]} if game else set(), include_unverified)
+    start, end = m["window_start"] - PRE_WINDOW, m["window_end"]
+    if client is None or recently_searched(store, m["game_id"], end, now):
+        posts = store.posts_in_window(start, end, handles)
+    else:
+        focus = f"{game['away']} at {game['home']}" if game else None
+        posts = run_search(store, client, handles, start, end, purpose, m["move_id"], m["game_id"], focus, now)
+        if posts is None:
+            return False
+        # Include posts already stored for this window (e.g. from sweeps).
+        known = {p["post_id"] for p in posts}
+        posts += [p for p in store.posts_in_window(start, end, handles) if p["post_id"] not in known]
+    store.upsert_move_posts(link_rows(m, posts))
+    store.upsert_line_moves([{"move_id": m["move_id"], "explain_status": "searched"}])
+    return True
+
+
 def run(store, client, hours: float = 24, now: datetime | None = None,
         include_unverified: bool = False) -> int:
     """client=None (X search off) links only posts already stored, e.g. from sweeps."""
@@ -53,22 +74,9 @@ def run(store, client, hours: float = 24, now: datetime | None = None,
     moves.sort(key=lambda m: -(m["magnitude_score"] or 0))
     done = 0
     for m in moves:
-        g = games.get(m["game_id"])
-        handles = insiders.for_teams({g["home"], g["away"]} if g else set(), include_unverified)
-        start, end = m["window_start"] - PRE_WINDOW, m["window_end"]
-        if client is None or recently_searched(store, m["game_id"], end, now):
-            posts = store.posts_in_window(start, end, handles)
-        else:
-            focus = f"{g['away']} at {g['home']}" if g else None
-            posts = run_search(store, client, handles, start, end, "move", m["move_id"], m["game_id"], focus, now)
-            if posts is None:
-                log.warning("budget spent; move %s stays pending", m["move_id"])
-                break
-            # Include posts already stored for this window (e.g. from sweeps).
-            known = {p["post_id"] for p in posts}
-            posts += [p for p in store.posts_in_window(start, end, handles) if p["post_id"] not in known]
-        store.upsert_move_posts(link_rows(m, posts))
-        store.upsert_line_moves([{"move_id": m["move_id"], "explain_status": "searched"}])
+        if not process_move(store, client, m, games.get(m["game_id"]), now, include_unverified=include_unverified):
+            log.warning("budget spent; move %s stays pending", m["move_id"])
+            break
         done += 1
     if moves:
         log.info("searched %d/%d pending moves", done, len(moves))

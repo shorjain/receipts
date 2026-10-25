@@ -25,7 +25,7 @@ def utcnow() -> datetime:
 
 
 # One-off setup searches (handle verification) don't count against the daily budget.
-BUDGETED = ("move", "sweep")
+BUDGETED = ("move", "sweep", "backfill")
 
 
 def spent_today(store, now: datetime | None = None) -> float:

@@ -271,14 +271,15 @@ def assign_ids(rows: list[dict], existing: list[dict], games: dict[str, dict] | 
     return out
 
 
-def run(store, hours: float = 48, now: datetime | None = None) -> list[dict]:
+def run(store, hours: float = 48, now: datetime | None = None, game_id: str | None = None) -> list[dict]:
+    """Detect moves in (now - hours, now]; game_id limits it to one game (backfill)."""
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     start = now - timedelta(hours=hours)
     look = timedelta(minutes=_cfg()["lookback_minutes"])
-    snaps = store.odds_series(start - look, now)
+    snaps = store.odds_series(start - look, now, game_id=game_id)
     games = {g["game_id"]: g for g in store.games_between(start - timedelta(days=14), now + timedelta(days=14))}
     rows = detect(snaps, games)
-    rows = assign_ids(rows, store.line_moves(start - look, now), games)
+    rows = assign_ids(rows, store.line_moves(start - look, now, game_id=game_id), games)
     for r in rows:
         r["detected_at"] = now
     store.upsert_line_moves(rows)

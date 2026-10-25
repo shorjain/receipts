@@ -93,6 +93,11 @@ TABLES: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
         ("called_at", TS), ("source", STR), ("endpoint", STR), ("cost_units", FLOAT),
         ("remaining", FLOAT), ("note", STR),
     ], ["called_at", "source", "endpoint"]),
+    # Local bookkeeping for pipelines/backfill.py (resumable tasks); never synced.
+    "BACKFILL_STATE": ([
+        ("task_id", STR), ("kind", STR), ("game_id", STR), ("status", STR), ("priority", FLOAT),
+        ("detail", JSON), ("note", STR),
+    ], ["task_id"]),
     # Local bookkeeping for pipelines/sync_snowflake.py; never synced.
     "SYNC_STATE": ([
         ("table_name", STR), ("synced_through", TS), ("rows_synced", INT),
@@ -104,4 +109,4 @@ TABLES: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
 for _cols, _ in TABLES.values():
     _cols.append(("updated_at", TS))
 
-LOCAL_ONLY = {"SYNC_STATE"}
+LOCAL_ONLY = {"SYNC_STATE", "BACKFILL_STATE"}

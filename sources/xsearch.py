@@ -145,12 +145,15 @@ class XSearchClient:
         """Search posts by `handles` (or all of X when None) since `start`."""
         from xai_sdk.chat import user
         from xai_sdk.tools import x_search
+        # to_date is day-granular (see module docstring): leave it off for windows ending
+        # today; for past windows, the next day bounds the search without losing posts.
+        today = datetime.now(timezone.utc).date()
+        to_date = (end + timedelta(days=1)).replace(tzinfo=timezone.utc) if end.date() < today else None
         try:
             chat = self.client.chat.create(
                 model=self.model, temperature=0,
-                # from_date only: to_date is day-granular (see module docstring).
                 tools=[x_search(from_date=start.replace(tzinfo=timezone.utc) - timedelta(minutes=5),
-                                allowed_x_handles=handles or None)])
+                                to_date=to_date, allowed_x_handles=handles or None)])
             chat.append(user(prompt or build_prompt(handles or [], start, end, focus)))
             r = chat.sample()
         except Exception as e:  # noqa: BLE001 - logged in SEARCH_RUNS, never raised into the loop

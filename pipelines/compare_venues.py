@@ -185,14 +185,14 @@ def summarize(moves: list[dict], gaps: list[dict], a: str = "kalshi", b: str = "
 
 
 # ---- pipeline ---------------------------------------------------------------------
-def run(store, hours: float = 48, now: datetime | None = None) -> dict:
+def run(store, hours: float = 48, now: datetime | None = None, game_id: str | None = None) -> dict:
     cfg = _cfg()
     a, b = cfg["compare"]
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     start = now - timedelta(hours=hours)
     look = timedelta(minutes=cfg["lookback_minutes"])
     games = {g["game_id"]: g for g in store.games_between(start - timedelta(days=14), now + timedelta(days=14))}
-    series = dm.build_series(store.odds_series(start - look, now), games)
+    series = dm.build_series(store.odds_series(start - look, now, game_id=game_id), games)
 
     gap_rows = []
     for (gid, mtype), by_venue in series.items():
@@ -206,7 +206,7 @@ def run(store, hours: float = 48, now: datetime | None = None) -> dict:
                              "market_type": mtype, "detected_at": now})
     store.upsert_venue_gaps(gap_rows)
 
-    move_rows, moves = [], store.line_moves(start, now)
+    move_rows, moves = [], store.line_moves(start, now, game_id=game_id)
     for m in moves:
         r = reaction_times(m, series.get((m["game_id"], m["market_type"]), {}), cfg)
         lead, lag = leader(r)
