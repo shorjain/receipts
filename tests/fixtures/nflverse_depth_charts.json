@@ -1,0 +1,72 @@
+[
+ {
+  "dt": "2026-10-25T06:01:49Z",
+  "team": "ARI",
+  "player_name": "Josh Sweat",
+  "espn_id": "3693166",
+  "gsis_id": "00-0034381",
+  "pos_grp_id": "16",
+  "pos_grp": "Base 4-3 D",
+  "pos_id": "11",
+  "pos_name": "Left Defensive End",
+  "pos_abb": "LDE",
+  "pos_slot": 1,
+  "pos_rank": 1
+ },
+ {
+  "dt": "2026-10-25T06:01:49Z",
+  "team": "ARI",
+  "player_name": "Roy Lopez",
+  "espn_id": "4040805",
+  "gsis_id": "00-0036568",
+  "pos_grp_id": "16",
+  "pos_grp": "Base 4-3 D",
+  "pos_id": "24",
+  "pos_name": "Left Defensive Tackle",
+  "pos_abb": "LDT",
+  "pos_slot": 2,
+  "pos_rank": 1
+ },
+ {
+  "dt": "2026-10-25T06:01:49Z",
+  "team": "ARI",
+  "player_name": "Walter Nolen III",
+  "espn_id": "4685503",
+  "gsis_id": "00-0040706",
+  "pos_grp_id": "16",
+  "pos_grp": "Base 4-3 D",
+  "pos_id": "25",
+  "pos_name": "Right Defensive Tackle",
+  "pos_abb": "RDT",
+  "pos_slot": 3,
+  "pos_rank": 1
+ },
+ {
+  "dt": "2026-10-25T06:01:49Z",
+  "team": "ARI",
+  "player_name": "Dante Stills",
+  "espn_id": "4362225",
+  "gsis_id": "00-0038623",
+  "pos_grp_id": "16",
+  "pos_grp": "Base 4-3 D",
+  "pos_id": "13",
+  "pos_name": "Right Defensive End",
+  "pos_abb": "RDE",
+  "pos_slot": 4,
+  "pos_rank": 1
+ },
+ {
+  "dt": "2026-10-25T06:01:49Z",
+  "team": "ARI",
+  "player_name": "Jack Gibbens",
+  "espn_id": "4249739",
+  "gsis_id": "00-0037596",
+  "pos_grp_id": "16",
+  "pos_grp": "Base 4-3 D",
+  "pos_id": "26",
+  "pos_name": "Weakside Linebacker",
+  "pos_abb": "WLB",
+  "pos_slot": 5,
+  "pos_rank": 1
+ }
+]
