@@ -5,6 +5,7 @@ import pytest
 from pipelines import detect_moves as dm
 
 T0 = datetime(2026, 10, 25, 14, 0)
+LIQ = {"kalshi": (0.04, 500), "polymarket": (0.04, 500)}
 
 
 def series(values, minutes, key="prob"):
@@ -73,7 +74,7 @@ def test_overlapping_windows_merge_and_multi_venue(cfg, la_lv_game):
         snap("pinnacle", "winner", 0, prob=0.40), snap("pinnacle", "winner", 10, prob=0.45),
         snap("consensus", "winner", 5, prob=0.40), snap("consensus", "winner", 20, prob=0.44),
     ]
-    rows = dm.detect(snaps, {la_lv_game["game_id"]: la_lv_game}, cfg, 0.04, 500)
+    rows = dm.detect(snaps, {la_lv_game["game_id"]: la_lv_game}, cfg, LIQ)
     assert len(rows) == 1
     r = rows[0]
     assert r["venue_scope"] == "multi" and r["venues"] == "consensus,pinnacle"
@@ -87,14 +88,14 @@ def test_spike_and_reversal_are_two_single_moves(cfg, la_lv_game):
         snap("pinnacle", "winner", 0, prob=0.40), snap("pinnacle", "winner", 10, prob=0.45),
         snap("consensus", "winner", 5, prob=0.45), snap("consensus", "winner", 15, prob=0.41),
     ]
-    rows = dm.detect(snaps, {la_lv_game["game_id"]: la_lv_game}, cfg, 0.04, 500)
+    rows = dm.detect(snaps, {la_lv_game["game_id"]: la_lv_game}, cfg, LIQ)
     assert len(rows) == 2 and {r["venue_scope"] for r in rows} == {"single"}
     assert all(abs(r["prob_after"] - r["prob_before"]) >= 0.03 for r in rows)
 
 
 def test_separate_windows_stay_separate(cfg, la_lv_game):
     snaps = [snap("pinnacle", "winner", m, prob=p) for m, p in [(0, .40), (10, .44), (90, .44), (100, .50)]]
-    rows = dm.detect(snaps, {la_lv_game["game_id"]: la_lv_game}, cfg, 0.04, 500)
+    rows = dm.detect(snaps, {la_lv_game["game_id"]: la_lv_game}, cfg, LIQ)
     assert len(rows) == 2
 
 
@@ -102,11 +103,23 @@ def test_illiquid_kalshi_points_are_ignored(cfg, la_lv_game):
     games = {la_lv_game["game_id"]: la_lv_game}
     wide = [snap("kalshi", "winner", 0, prob=.40, source="kalshi_derived", bid=.38, ask=.42, volume=1000),
             snap("kalshi", "winner", 10, prob=.46, source="kalshi_derived", bid=.44, ask=.48, volume=1000)]
-    assert dm.detect(wide, games, cfg, 0.04, 500) == []
+    assert dm.detect(wide, games, cfg, LIQ) == []
     thin = [{**s, "bid": s["implied_prob"] - .01, "ask": s["implied_prob"] + .01, "volume": 10} for s in wide]
-    assert dm.detect(thin, games, cfg, 0.04, 500) == []
+    assert dm.detect(thin, games, cfg, LIQ) == []
     ok = [{**s, "volume": 1000} for s in thin]
-    assert len(dm.detect(ok, games, cfg, 0.04, 500)) == 1
+    assert len(dm.detect(ok, games, cfg, LIQ)) == 1
+
+
+def test_polymarket_derived_counts_and_merges_with_kalshi(cfg, la_lv_game):
+    games = {la_lv_game["game_id"]: la_lv_game}
+    q = dict(volume=1e4)
+    snaps = [snap("kalshi", "winner", 0, prob=.40, source="kalshi_derived", bid=.39, ask=.41, **q),
+             snap("kalshi", "winner", 12, prob=.46, source="kalshi_derived", bid=.45, ask=.47, **q),
+             snap("polymarket", "winner", 0, prob=.40, source="polymarket_derived", bid=.39, ask=.41, **q),
+             snap("polymarket", "winner", 8, prob=.45, source="polymarket_derived", bid=.44, ask=.46, **q),
+             snap("polymarket", "winner", 9, prob=.30, source="polymarket_clob", bid=.29, ask=.31, **q)]
+    rows = dm.detect(snaps, games, cfg, LIQ)
+    assert len(rows) == 1 and rows[0]["venues"] == "kalshi,polymarket" and rows[0]["venue_scope"] == "multi"
 
 
 def test_raw_kalshi_tickers_and_other_books_are_not_detected(cfg, la_lv_game):
@@ -114,14 +127,14 @@ def test_raw_kalshi_tickers_and_other_books_are_not_detected(cfg, la_lv_game):
     snaps = [snap("kalshi", "winner", 0, prob=.4, source="kalshi_rest", bid=.39, ask=.41, volume=1e4),
              snap("kalshi", "winner", 10, prob=.5, source="kalshi_rest", bid=.49, ask=.51, volume=1e4),
              snap("draftkings", "winner", 0, prob=.4), snap("draftkings", "winner", 10, prob=.5)]
-    assert dm.detect(snaps, games, cfg, 0.04, 500) == []
+    assert dm.detect(snaps, games, cfg, LIQ) == []
 
 
 def test_in_game_snapshots_are_ignored(cfg, la_lv_game):
     games = {la_lv_game["game_id"]: la_lv_game}
     after = (la_lv_game["kickoff_at"] - T0).total_seconds() / 60
     snaps = [snap("pinnacle", "winner", after + 1, prob=.4), snap("pinnacle", "winner", after + 5, prob=.7)]
-    assert dm.detect(snaps, games, cfg, 0.04, 500) == []
+    assert dm.detect(snaps, games, cfg, LIQ) == []
 
 
 def test_assign_ids_reuses_overlapping_existing_move():

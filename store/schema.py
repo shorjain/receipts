@@ -38,7 +38,18 @@ TABLES: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
         ("crossed_key_number", INT), ("magnitude_score", FLOAT),
         ("summary_text", STR), ("embedding", VEC), ("explain_status", STR),
         ("explanation", STR), ("detected_at", TS),
+        # Venue comparison (pipelines/compare_venues.py): minutes after window_start
+        # at which each venue had covered half the move; leader is the earliest.
+        ("venue_reactions", JSON), ("leader_venue", STR), ("lead_lag_minutes", FLOAT),
     ], ["move_id"]),
+    # Not in the brief's model: stretches where Kalshi and Polymarket disagree.
+    "VENUE_GAPS": ([
+        ("gap_id", STR), ("game_id", STR), ("market_type", STR), ("venue_a", STR),
+        ("venue_b", STR), ("gap_start", TS), ("gap_end", TS), ("peak_at", TS),
+        ("peak_gap", FLOAT), ("baseline_gap", FLOAT), ("a_before", FLOAT), ("b_before", FLOAT),
+        ("a_at_peak", FLOAT), ("b_at_peak", FLOAT), ("mover", STR), ("resolution", STR),
+        ("detected_at", TS),
+    ], ["gap_id"]),
     "POSTS": ([
         ("post_id", STR), ("url", STR), ("author", STR), ("posted_at", TS),
         ("text", STR), ("text_source", STR), ("embedding", VEC),

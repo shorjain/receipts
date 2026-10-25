@@ -63,3 +63,26 @@ def test_odds_api_schedule(la_lv_game):
     tuesday = datetime(2026, 10, 20, 16, 0)
     assert ingest_odds.odds_api_interval(tuesday, [la_lv_game]) == 30
     assert ingest_odds.odds_api_interval(datetime(2026, 10, 26), [la_lv_game]) is None  # nothing upcoming
+
+
+def test_compare_venues_run_writes_gaps_and_reactions(store, la_lv_game):
+    from pipelines import compare_venues
+    store.upsert_games([la_lv_game])
+    store.upsert_markets([{"market_id": f"{v}:2026_07_LA_LV:winner", "venue": v, "game_id": "2026_07_LA_LV",
+                           "market_type": "winner", "side": "home"} for v in ("kalshi", "polymarket")])
+    rows = []
+    for v, path in [("kalshi", [(0, .40), (2, .40), (4, .40), (6, .45), (8, .45)]),
+                    ("polymarket", [(0, .40), (2, .45), (4, .45), (6, .45), (8, .45)])]:
+        rows += [{"market_id": f"{v}:2026_07_LA_LV:winner", "taken_at": T0 + timedelta(minutes=m),
+                  "implied_prob": p, "bid": p - .005, "ask": p + .005, "volume": 1e5,
+                  "source": f"{v}_derived"} for m, p in path]
+    store.insert_odds_snapshots(rows)
+    now = T0 + timedelta(hours=1)
+    detect_moves.run(store, hours=6, now=now)
+    for _ in range(2):  # idempotent
+        summary = compare_venues.run(store, hours=6, now=now)
+    gaps = store.venue_gaps()
+    assert len(gaps) == 1 and gaps[0]["mover"] == "polymarket" and gaps[0]["resolution"] == "follower_caught_up"
+    move = store.line_moves()[0]
+    assert move["leader_venue"] == "polymarket" and move["lead_lag_minutes"] == 4.0
+    assert summary["polymarket_first"] == 1

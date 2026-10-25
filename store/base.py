@@ -52,11 +52,21 @@ class SqlStore:
 
     # ---- schema ------------------------------------------------------------
     def create_schema(self) -> None:
+        """Create missing tables, then add any columns that schema.py gained since."""
         for table, (cols, pk) in TABLES.items():
             col_sql = ", ".join(f"{name} {self.TYPE_MAP[t]}" for name, t in cols)
             self._execute(
                 f"CREATE TABLE IF NOT EXISTS {table} ({col_sql}, PRIMARY KEY ({', '.join(pk)}))"
             )
+        existing: dict[str, set[str]] = {}
+        for r in self._query("SELECT table_name, column_name FROM information_schema.columns "
+                             "WHERE table_schema = CURRENT_SCHEMA()"):
+            existing.setdefault(r["table_name"].upper(), set()).add(r["column_name"].lower())
+        for table, (cols, _) in TABLES.items():
+            have = existing.get(table, set())
+            for name, t in cols:
+                if have and name not in have:
+                    self._execute(f"ALTER TABLE {table} ADD COLUMN {name} {self.TYPE_MAP[t]}")
 
     # ---- generic upsert ----------------------------------------------------
     def upsert(self, table: str, rows: Iterable[dict]) -> int:
@@ -190,6 +200,21 @@ class SqlStore:
             f"SELECT move_id, explain_status FROM LINE_MOVES WHERE move_id IN "
             f"({', '.join('?' for _ in move_ids)})", list(move_ids))
         return {r["move_id"]: r["explain_status"] for r in rows}
+
+    # ---- VENUE_GAPS --------------------------------------------------------
+    def upsert_venue_gaps(self, rows: Iterable[dict]) -> int:
+        return self.upsert("VENUE_GAPS", rows)
+
+    def venue_gaps(self, start: datetime | None = None, end: datetime | None = None,
+                   game_id: str | None = None) -> list[dict]:
+        sql, params = "SELECT * FROM VENUE_GAPS WHERE 1=1", []
+        if start is not None:
+            sql += " AND gap_end >= ?"; params.append(utc_naive(start))
+        if end is not None:
+            sql += " AND gap_start <= ?"; params.append(utc_naive(end))
+        if game_id:
+            sql += " AND game_id = ?"; params.append(game_id)
+        return self._query(sql + " ORDER BY gap_start DESC", params)
 
     # ---- API usage ---------------------------------------------------------
     def log_api_usage(self, source: str, endpoint: str, cost_units: float,

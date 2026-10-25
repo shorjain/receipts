@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import argparse
 
-from pipelines import detect_moves, ingest_odds, load_nflverse
+from pipelines import compare_venues, detect_moves, ingest_odds, load_nflverse
 
 
 def main() -> None:
@@ -22,6 +22,7 @@ def main() -> None:
         load_nflverse.run(store, args.season)
     ingest_odds.run_once(store)
     detect_moves.run(store)
+    compare_venues.run(store)
 
 
 if __name__ == "__main__":

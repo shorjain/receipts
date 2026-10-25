@@ -6,19 +6,21 @@ Series used:
   KXNFLTOTAL  ladder: "over X.5 points scored?"
 
 The ladders are turned into one implied line per game by finding where the
-probability curve crosses 50% (see implied_median). Spreads use home betting
+probability curve crosses 50% (see sources/ladder.py). Spreads use home betting
 convention: home -3.5 means the home team is favored by 3.5.
 """
 from __future__ import annotations
 
 import re
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 import httpx
 
 from common import teams
+from common.games import match_by_teams
 from common.settings import env, env_float
+from sources import ladder
 
 SERIES = {"KXNFLGAME": "winner", "KXNFLSPREAD": "spread", "KXNFLTOTAL": "total"}
 _MONTHS = {m: i for i, m in enumerate(
@@ -89,16 +91,7 @@ def parse_event_ticker(event_ticker: str) -> tuple[date, tuple[str, str]] | None
 def match_game(event_ticker: str, games: list[dict]) -> dict | None:
     """Find the GAMES row for a Kalshi event (same two teams, kickoff within a day)."""
     parsed = parse_event_ticker(event_ticker)
-    if not parsed:
-        return None
-    day, pair = parsed
-    for g in games:
-        if {g["home"], g["away"]} == set(pair):
-            ko = g["kickoff_at"]
-            ko_et = (ko.replace(tzinfo=timezone.utc) - timedelta(hours=5)).date()
-            if abs((ko_et - day).days) <= 1:
-                return g
-    return None
+    return match_by_teams(parsed[1], parsed[0], games) if parsed else None
 
 
 def quote(m: dict) -> dict:
@@ -113,28 +106,10 @@ def quote(m: dict) -> dict:
 def is_liquid(q: dict, max_spread: float | None = None, min_volume: float | None = None) -> bool:
     max_spread = env_float("KALSHI_MAX_SPREAD", 0.04) if max_spread is None else max_spread
     min_volume = env_float("KALSHI_MIN_VOLUME", 500) if min_volume is None else min_volume
-    if q["bid"] is None or q["ask"] is None or q["bid"] <= 0:
-        return False
-    return round(q["ask"] - q["bid"], 4) < max_spread and (q["volume"] or 0) >= min_volume
+    return ladder.is_liquid(q, max_spread, min_volume)
 
 
-def implied_median(points: list[tuple[float, float]]) -> float | None:
-    """Given (x, P(X > x)) points, return x where the curve crosses 0.5.
-
-    Probabilities are forced non-increasing in x first (noisy quotes can invert).
-    Returns None when the ladder doesn't bracket 0.5.
-    """
-    if len(points) < 2:
-        return None
-    pts = sorted(points)
-    mono, running = [], 1.0
-    for x, p in pts:
-        running = min(running, p)
-        mono.append((x, running))
-    for (x0, p0), (x1, p1) in zip(mono, mono[1:]):
-        if p0 >= 0.5 >= p1 and p0 != p1:
-            return x0 + (p0 - 0.5) * (x1 - x0) / (p0 - p1)
-    return None
+implied_median = ladder.implied_median
 
 
 def team_from_ticker(ticker: str) -> str | None:
@@ -155,7 +130,7 @@ def normalize(series_markets: dict[str, list[dict]], games: list[dict], taken_at
     market type (market_id 'kalshi:<game_id>:<type>'), which is what move detection reads.
     """
     markets, snaps = [], []
-    by_game: dict[tuple[str, str], list[tuple[dict, dict]]] = {}
+    by_game: dict[tuple[str, str], list[tuple[dict, str]]] = {}
     game_index = {g["game_id"]: g for g in games}
     for series, raw in series_markets.items():
         mtype = SERIES[series]
@@ -172,11 +147,14 @@ def normalize(series_markets: dict[str, list[dict]], games: list[dict], taken_at
             snaps.append({"market_id": mid, "taken_at": taken_at, "implied_prob": q["mid"],
                           "price": q["price"], "line": q["strike"], "bid": q["bid"],
                           "ask": q["ask"], "volume": q["volume"], "source": "kalshi_rest"})
-            by_game.setdefault((g["game_id"], mtype), []).append((q, {"side": side}))
+            by_game.setdefault((g["game_id"], mtype), []).append((q, side))
 
     for (game_id, mtype), items in by_game.items():
         g = game_index[game_id]
-        derived = _derive(g, mtype, items, max_spread, min_volume)
+        derived = ladder.derive(
+            g, mtype, items,
+            env_float("KALSHI_MAX_SPREAD", 0.04) if max_spread is None else max_spread,
+            env_float("KALSHI_MIN_VOLUME", 500) if min_volume is None else min_volume)
         if derived is None:
             continue
         mid = f"kalshi:{game_id}:{mtype}"
@@ -185,35 +163,3 @@ def normalize(series_markets: dict[str, list[dict]], games: list[dict], taken_at
                         "side": "over" if mtype == "total" else "home", "source_ref": "derived"})
         snaps.append({"market_id": mid, "taken_at": taken_at, "source": "kalshi_derived", **derived})
     return markets, snaps
-
-
-def _derive(g: dict, mtype: str, items: list[tuple[dict, dict]], max_spread, min_volume) -> dict | None:
-    liquid = [(q, meta) for q, meta in items if is_liquid(q, max_spread, min_volume)]
-    if mtype == "winner":
-        home = next((q for q, m in items if m["side"] == g["home"]), None)
-        away = next((q for q, m in items if m["side"] == g["away"]), None)
-        if not home or home["mid"] is None:
-            return None
-        p = home["mid"]
-        if away and away["mid"] is not None and home["mid"] + away["mid"] > 0:
-            p = home["mid"] / (home["mid"] + away["mid"])
-        return {"implied_prob": p, "price": home["price"], "line": None, "bid": home["bid"],
-                "ask": home["ask"], "volume": home["volume"]}
-    pts = []
-    for q, meta in liquid:
-        if q["strike"] is None or q["mid"] is None:
-            continue
-        if mtype == "total":
-            pts.append((q["strike"], q["mid"]))
-        elif meta["side"] == g["home"]:
-            pts.append((q["strike"], q["mid"]))          # P(home margin > s)
-        elif meta["side"] == g["away"]:
-            pts.append((-q["strike"], 1 - q["mid"]))     # P(home margin > -s)
-    median = implied_median(pts)
-    if median is None:
-        return None
-    # Quote of the rung nearest 50% stands in for the market's bid/ask.
-    near = min(liquid, key=lambda qm: abs((qm[0]["mid"] or 0) - 0.5))[0]
-    line = round(median, 2) if mtype == "total" else round(-median, 2)
-    return {"implied_prob": None, "price": None, "line": line, "bid": near["bid"],
-            "ask": near["ask"], "volume": sum(q["volume"] or 0 for q, _ in liquid)}

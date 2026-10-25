@@ -9,6 +9,17 @@ moves:
   merge_gap_minutes: 0          # merge windows that overlap or are within this gap
   min_prob_change_to_store: 0.005   # skip storing Kalshi snapshots that moved less than 0.5 pp
 
+venues:
+  compare: [kalshi, polymarket]   # venue_a, venue_b; gaps are b - a
+  gap_prob_points: 0.025        # winner gap that counts (2.5 pp)
+  gap_line_points: 0.5          # spread / total gap that counts
+  gap_baseline_minutes: 180     # gaps are measured against the median gap over this window
+  gap_baseline_min_points: 10   # until this much history exists the baseline is 0
+  gap_min_points: 2             # aligned points in a row (about 1+ minute at 60 s polling)
+  align_tolerance_minutes: 11   # a stored value stays current this long (heartbeat is 10)
+  reaction_fraction: 0.5        # a venue "reacted" once it covered this share of the move
+  reaction_after_minutes: 30    # keep looking this long after the window for laggards
+
 odds_api_schedule:
   weekday_minutes: 30           # Mon-Sat
   sunday_minutes: 10            # Sunday 9 AM ET until the last kickoff

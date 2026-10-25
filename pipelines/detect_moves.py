@@ -83,7 +83,20 @@ def crossed_keys(a: float, b: float, keys: list[int]) -> list[int]:
     return sorted({k for k in keys for s in (k, -k) if lo <= s <= hi})
 
 
-def kalshi_liquid(p: Point, max_spread: float, min_volume: float) -> bool:
+# Prediction-market venues: only their derived per-game series count, and each point
+# must be liquid. Sportsbook venues have no bid/ask to check.
+EXCHANGE_VENUES = ("kalshi", "polymarket")
+
+
+def liquidity_rules() -> dict[str, tuple[float, float]]:
+    """venue -> (max bid-ask spread, min 24h volume)."""
+    return {
+        "kalshi": (env_float("KALSHI_MAX_SPREAD", 0.04), env_float("KALSHI_MIN_VOLUME", 500)),
+        "polymarket": (env_float("POLYMARKET_MAX_SPREAD", 0.04), env_float("POLYMARKET_MIN_VOLUME", 500)),
+    }
+
+
+def is_liquid(p: Point, max_spread: float, min_volume: float) -> bool:
     if p.bid is None or p.ask is None or p.bid <= 0:
         return False
     return round(p.ask - p.bid, 4) < max_spread and (p.volume or 0) >= min_volume
@@ -197,33 +210,41 @@ def move_id(game_id: str, market_type: str, start: datetime) -> str:
     return hashlib.sha1(f"{game_id}|{market_type}|{start:%Y-%m-%dT%H:%M}".encode()).hexdigest()[:16]
 
 
-def detect(snapshots: list[dict], games: dict[str, dict], cfg: dict | None = None,
-           max_spread: float | None = None, min_volume: float | None = None) -> list[dict]:
-    """Pure detection: snapshot rows (joined with MARKETS) -> LINE_MOVES rows (no ids)."""
-    cfg = cfg or _cfg()
-    max_spread = env_float("KALSHI_MAX_SPREAD", 0.04) if max_spread is None else max_spread
-    min_volume = env_float("KALSHI_MIN_VOLUME", 500) if min_volume is None else min_volume
+def build_series(snapshots: list[dict], games: dict[str, dict],
+                 liquidity: dict[str, tuple[float, float]] | None = None
+                 ) -> dict[tuple[str, str], dict[str, list[Point]]]:
+    """Group pre-kickoff, liquid snapshots into {(game, market_type): {venue: [Point]}}."""
+    liquidity = liquidity_rules() if liquidity is None else liquidity
     series: dict[tuple[str, str], dict[str, list[Point]]] = {}
     for s in snapshots:
         venue = s["venue"]
         if venue not in DETECT_VENUES:
             continue
-        if venue == "kalshi" and s.get("source") != "kalshi_derived":
+        if venue in EXCHANGE_VENUES and not str(s.get("source", "")).endswith("_derived"):
             continue
         g = games.get(s["game_id"])
         if g and s["taken_at"] >= g["kickoff_at"]:
             continue  # in-game odds are not news-driven moves
         p = Point(s["taken_at"], s.get("implied_prob"), s.get("line"),
                   s.get("bid"), s.get("ask"), s.get("volume"))
-        if venue == "kalshi" and not kalshi_liquid(p, max_spread, min_volume):
+        if venue in liquidity and not is_liquid(p, *liquidity[venue]):
             continue
         series.setdefault((s["game_id"], s["market_type"]), {}).setdefault(venue, []).append(p)
+    for by_venue in series.values():
+        for pts in by_venue.values():
+            pts.sort(key=lambda p: p.t)
+    return series
 
+
+def detect(snapshots: list[dict], games: dict[str, dict], cfg: dict | None = None,
+           liquidity: dict[str, tuple[float, float]] | None = None) -> list[dict]:
+    """Pure detection: snapshot rows (joined with MARKETS) -> LINE_MOVES rows (no ids)."""
+    cfg = cfg or _cfg()
+    series = build_series(snapshots, games, liquidity)
     rows = []
     for (gid, mtype), by_venue in series.items():
         cands = []
         for venue, pts in by_venue.items():
-            pts.sort(key=lambda p: p.t)
             cands += find_candidates(gid, mtype, venue, pts, cfg)
         for mv in merge_candidates(cands, cfg.get("merge_gap_minutes", 0)):
             rows.append(summarize(mv, by_venue, games.get(gid)))

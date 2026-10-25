@@ -1,7 +1,10 @@
-"""Poll Kalshi (every KALSHI_POLL_SECONDS) and The Odds API (credit-aware schedule),
-store MARKETS + ODDS_SNAPSHOTS, and copy every pull to data/raw/.
+"""Poll Kalshi and Polymarket (every KALSHI_POLL_SECONDS) and The Odds API
+(credit-aware schedule), store MARKETS + ODDS_SNAPSHOTS, and copy every pull to data/raw/.
 
-Kalshi snapshots are stored when the mid moves at least min_prob_change_to_store
+Polymarket's market catalog is rediscovered every 30 minutes; prices come from one
+batched order-book call per poll.
+
+Kalshi and Polymarket snapshots are stored when the mid moves at least min_prob_change_to_store
 (0.5 pp), the derived line moves, or HEARTBEAT_MINUTES have passed. The heartbeat
 keeps a reference point inside the 30-minute lookback so a jump after a long
 quiet stretch is still detected.
@@ -20,7 +23,7 @@ from zoneinfo import ZoneInfo
 from common.log import get_logger
 from common.raw import write_raw
 from common.settings import env_int, thresholds
-from sources import kalshi, odds_api
+from sources import kalshi, odds_api, polymarket
 
 log = get_logger("ingest_odds")
 ET = ZoneInfo("America/New_York")
@@ -57,6 +60,34 @@ def poll_kalshi(store, client: kalshi.KalshiClient, games: list[dict], now: date
     store.insert_odds_snapshots(keep)
     log.info("kalshi: %d markets, stored %d/%d snapshots", len(markets), len(keep), len(snaps))
     return len(keep)
+
+
+class PolymarketPoller:
+    """Keeps the Gamma catalog between polls; refreshes it every CATALOG_REFRESH_MINUTES."""
+
+    def __init__(self, client: polymarket.PolymarketClient | None = None):
+        self.client = client or polymarket.PolymarketClient()
+        self.catalog: list[dict] = []
+        self.refreshed_at: datetime | None = None
+
+    def poll(self, store, games: list[dict], now: datetime | None = None) -> int:
+        now = now or utcnow()
+        stale = timedelta(minutes=polymarket.CATALOG_REFRESH_MINUTES)
+        if self.refreshed_at is None or now - self.refreshed_at >= stale:
+            self.catalog = polymarket.discover(self.client, games, now)
+            self.refreshed_at = now
+        books = self.client.books([e["token_id"] for e in self.catalog])
+        write_raw("polymarket", [{"asset_id": b.get("asset_id"), "bids": b.get("bids", [])[-5:],
+                                  "asks": b.get("asks", [])[-5:], "ts": b.get("timestamp")} for b in books],
+                  when=now.replace(tzinfo=timezone.utc))
+        markets, snaps = polymarket.normalize(self.catalog, books, games, now)
+        min_change = thresholds()["moves"]["min_prob_change_to_store"]
+        last = store.latest_snapshots([s["market_id"] for s in snaps])
+        keep = [s for s in snaps if should_store(s, last.get(s["market_id"]), min_change, now)]
+        store.upsert_markets(markets)
+        store.insert_odds_snapshots(keep)
+        log.info("polymarket: %d markets, stored %d/%d snapshots", len(markets), len(keep), len(snaps))
+        return len(keep)
 
 
 def odds_api_interval(now_utc: datetime, games: list[dict]) -> int | None:
@@ -96,7 +127,7 @@ def poll_odds_api(store, client: odds_api.OddsApiClient, games: list[dict], now:
     return len(snaps)
 
 
-def run_once(store, force_odds_api: bool = False) -> None:
+def run_once(store, force_odds_api: bool = False, pm_poller: PolymarketPoller | None = None) -> None:
     now = utcnow()
     games = store.games_between(now - timedelta(days=2), now + timedelta(days=10))
     if not games:
@@ -104,8 +135,12 @@ def run_once(store, force_odds_api: bool = False) -> None:
         return
     try:
         poll_kalshi(store, kalshi.KalshiClient(), games, now)
-    except Exception as e:  # keep the other source running
+    except Exception as e:  # keep the other sources running
         log.error("kalshi poll failed: %s", e)
+    try:
+        (pm_poller or PolymarketPoller()).poll(store, games, now)
+    except Exception as e:
+        log.error("polymarket poll failed: %s", e)
     client = odds_api.OddsApiClient(store=store)
     if not client.key:
         log.info("ODDS_API_KEY not set; skipping The Odds API")
@@ -130,9 +165,10 @@ def main() -> None:
     store.create_schema()
     if args.loop:
         period = env_int("KALSHI_POLL_SECONDS", 60)
+        pm_poller = PolymarketPoller()
         while True:
             started = time.time()
-            run_once(store)
+            run_once(store, pm_poller=pm_poller)
             time.sleep(max(1, period - (time.time() - started)))
     else:
         run_once(store, args.force_odds_api)
