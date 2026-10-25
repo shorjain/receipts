@@ -62,11 +62,14 @@ class SqlStore:
         for r in self._query("SELECT table_name, column_name FROM information_schema.columns "
                              "WHERE table_schema = CURRENT_SCHEMA()"):
             existing.setdefault(r["table_name"].upper(), set()).add(r["column_name"].lower())
+        now = utc_naive(datetime.now(timezone.utc))
         for table, (cols, _) in TABLES.items():
             have = existing.get(table, set())
             for name, t in cols:
                 if have and name not in have:
                     self._execute(f"ALTER TABLE {table} ADD COLUMN {name} {self.TYPE_MAP[t]}")
+                    if name == "updated_at":  # existing rows count as written now
+                        self._execute(f"UPDATE {table} SET updated_at = ? WHERE updated_at IS NULL", [now])
 
     # ---- generic upsert ----------------------------------------------------
     def upsert(self, table: str, rows: Iterable[dict]) -> int:
@@ -74,6 +77,8 @@ class SqlStore:
         rows = list(rows)
         if not rows:
             return 0
+        now = utc_naive(datetime.now(timezone.utc))
+        rows = [r if r.get("updated_at") else {**r, "updated_at": now} for r in rows]
         cols, pk = TABLES[table]
         names = [c for c, _ in cols]
         types = dict(cols)
@@ -109,6 +114,20 @@ class SqlStore:
         self._execute(merge)
         self._execute(f"DROP TABLE IF EXISTS {tmp}")
         return len(dedup)
+
+    # ---- change tracking (used by the Snowflake sync) -----------------------
+    def rows_changed(self, table: str, since: datetime | None, until: datetime) -> list[dict]:
+        sql, params = f"SELECT * FROM {table} WHERE updated_at <= ?", [utc_naive(until)]
+        if since is not None:
+            sql += " AND updated_at > ?"; params.append(utc_naive(since))
+        return self._query(sql, params)
+
+    def sync_state(self) -> dict[str, dict]:
+        return {r["table_name"]: r for r in self._query("SELECT * FROM SYNC_STATE")}
+
+    def set_sync_state(self, table: str, synced_through: datetime, rows_synced: int) -> None:
+        self.upsert("SYNC_STATE", [{"table_name": table, "synced_through": synced_through,
+                                    "rows_synced": rows_synced}])
 
     # ---- GAMES / ROSTERS ---------------------------------------------------
     def upsert_games(self, rows: Iterable[dict]) -> int:

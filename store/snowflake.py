@@ -91,6 +91,25 @@ class SnowflakeStore(SqlStore):
         for s in stmts:
             self._execute(s)
 
+    # ---- sync helpers ---------------------------------------------------------
+    def suspend_warehouse(self) -> None:
+        """Suspend right after a batch job instead of idling for AUTO_SUSPEND seconds."""
+        try:
+            self._execute(f"ALTER WAREHOUSE {env('SNOWFLAKE_WAREHOUSE')} SUSPEND")
+        except snowflake.connector.errors.ProgrammingError as e:
+            if "cannot be suspended" not in str(e) and "not running" not in str(e):
+                raise
+
+    def embed_missing(self, table: str, text_col: str) -> int:
+        """Fill NULL embeddings server-side with AI_EMBED (no data leaves Snowflake)."""
+        model = self._model_literal(env("SNOWFLAKE_EMBED_MODEL", "snowflake-arctic-embed-m-v1.5"))
+        n = self._query(f"SELECT COUNT(*) AS n FROM {table} WHERE embedding IS NULL "
+                        f"AND {text_col} IS NOT NULL AND {text_col} <> ''")[0]["n"]
+        if n:
+            self._execute(f"UPDATE {table} SET embedding = AI_EMBED({model}, {text_col}) "
+                          f"WHERE embedding IS NULL AND {text_col} IS NOT NULL AND {text_col} <> ''")
+        return int(n)
+
     # ---- Cortex -------------------------------------------------------------
     @staticmethod
     def _model_literal(name: str) -> str:

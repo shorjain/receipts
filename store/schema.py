@@ -87,4 +87,15 @@ TABLES: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
         ("called_at", TS), ("source", STR), ("endpoint", STR), ("cost_units", FLOAT),
         ("remaining", FLOAT), ("note", STR),
     ], ["called_at", "source", "endpoint"]),
+    # Local bookkeeping for pipelines/sync_snowflake.py; never synced.
+    "SYNC_STATE": ([
+        ("table_name", STR), ("synced_through", TS), ("rows_synced", INT),
+    ], ["table_name"]),
 }
+
+# Every table gets updated_at, stamped by SqlStore.upsert, so the hourly sync can copy
+# only rows written since the last run.
+for _cols, _ in TABLES.values():
+    _cols.append(("updated_at", TS))
+
+LOCAL_ONLY = {"SYNC_STATE"}

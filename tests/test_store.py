@@ -31,3 +31,30 @@ def test_odds_series_and_latest(store, la_lv_game):
     rows = store.odds_series(T0, T0 + timedelta(hours=1), market_type="winner")
     assert [r["implied_prob"] for r in rows] == [.40, .45] and rows[0]["venue"] == "pinnacle"
     assert store.latest_snapshots()["pinnacle:g:winner"]["implied_prob"] == .45
+
+
+def test_upsert_stamps_updated_at(store):
+    store.upsert_games([{"game_id": "g1", "season": 2026}])
+    first = store.get_games()[0]["updated_at"]
+    assert first is not None
+    store.upsert_games([{"game_id": "g1", "home_score": 3, "updated_at": datetime(2030, 1, 1)}])
+    assert store.get_games()[0]["updated_at"] == datetime(2030, 1, 1)
+
+
+def test_sync_copies_only_new_rows_and_skips_embeddings(store):
+    from pipelines.sync_snowflake import sync
+    from store.duckdb import DuckDBStore
+    remote = DuckDBStore(":memory:")
+    remote.create_schema()
+    store.upsert_games([{"game_id": "g1", "season": 2026, "updated_at": T0}])
+    store.upsert_line_moves([{"move_id": "m1", "embedding": [0.5] * 768, "summary_text": "x",
+                              "updated_at": T0}])
+    assert sync(store, remote, now=T0 + timedelta(minutes=1)) == {"GAMES": 1, "LINE_MOVES": 1}
+    moved = remote.line_moves()[0]
+    assert moved["summary_text"] == "x" and moved["embedding"] is None
+    # nothing new -> nothing copied; a later write is picked up on the next run
+    assert sync(store, remote, now=T0 + timedelta(minutes=2)) == {}
+    store.upsert_games([{"game_id": "g1", "home_score": 7, "updated_at": T0 + timedelta(minutes=3)}])
+    assert sync(store, remote, now=T0 + timedelta(minutes=4)) == {"GAMES": 1}
+    assert remote.get_games()[0]["home_score"] == 7
+    assert remote.sync_state() == {}          # bookkeeping stays local

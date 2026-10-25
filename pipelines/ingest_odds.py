@@ -12,8 +12,10 @@ quiet stretch is still detected.
 Run:  python -m pipelines.ingest_odds --once       one pass (Odds API only if due)
       python -m pipelines.ingest_odds --loop       keep polling; every --analyze-every
                                                    minutes (default 10) also run
-                                                   detect_moves and compare_venues, since
-                                                   DuckDB allows only one writing process
+                                                   detect_moves and compare_venues, and
+                                                   every --sync-every minutes (default 60)
+                                                   sync to Snowflake, since DuckDB allows
+                                                   only one writing process
       python -m pipelines.ingest_odds --once --force-odds-api
 """
 from __future__ import annotations
@@ -25,7 +27,7 @@ from zoneinfo import ZoneInfo
 
 from common.log import get_logger
 from common.raw import write_raw
-from common.settings import env_int, thresholds
+from common.settings import env, env_float, env_int, thresholds
 from sources import kalshi, odds_api, polymarket
 
 log = get_logger("ingest_odds")
@@ -165,14 +167,17 @@ def main() -> None:
     ap.add_argument("--force-odds-api", action="store_true")
     ap.add_argument("--analyze-every", type=float, default=10,
                     help="minutes between detect_moves + compare_venues runs in --loop (0 = never)")
+    ap.add_argument("--sync-every", type=float, default=env_float("SNOWFLAKE_SYNC_MINUTES", 60),
+                    help="minutes between Snowflake syncs in --loop (0 = never; needs SNOWFLAKE_ACCOUNT)")
     args = ap.parse_args()
     store = get_store()
     store.create_schema()
     if args.loop:
         period = env_int("KALSHI_POLL_SECONDS", 60)
-        from pipelines import compare_venues, detect_moves
+        from pipelines import compare_venues, detect_moves, sync_snowflake
         pm_poller = PolymarketPoller()
-        last_analysis = 0.0
+        last_analysis = last_sync = 0.0
+        can_sync = store.dialect == "duckdb" and bool(env("SNOWFLAKE_ACCOUNT")) and args.sync_every > 0
         while True:
             started = time.time()
             run_once(store, pm_poller=pm_poller)
@@ -183,6 +188,12 @@ def main() -> None:
                 except Exception as e:
                     log.error("analysis failed: %s", e)
                 last_analysis = started
+            if can_sync and started - last_sync >= args.sync_every * 60:
+                try:
+                    sync_snowflake.run(store)
+                except Exception as e:  # Snowflake down must not stop local polling
+                    log.error("snowflake sync failed: %s", e)
+                last_sync = started
             time.sleep(max(1, period - (time.time() - started)))
     else:
         run_once(store, args.force_odds_api)
