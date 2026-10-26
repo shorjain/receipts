@@ -259,6 +259,11 @@ class SqlStore:
     def upsert_move_posts(self, rows: Iterable[dict]) -> int:
         return self.upsert("MOVE_POSTS", rows)
 
+    def delete_move_posts(self, move_id: str, post_ids: Sequence[str]) -> None:
+        if post_ids:
+            frag, params = self._in("post_id", post_ids)
+            self._execute("DELETE FROM MOVE_POSTS WHERE move_id = ?" + frag, [move_id] + params)
+
     def move_posts(self, move_id: str) -> list[dict]:
         return self._query("SELECT mp.*, p.author, p.posted_at, p.text, p.url FROM MOVE_POSTS mp "
                            "JOIN POSTS p ON p.post_id = mp.post_id WHERE mp.move_id = ? "

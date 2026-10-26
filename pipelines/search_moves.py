@@ -1,7 +1,9 @@
 """For each new line move, search tracked insiders from 60 minutes before the move
 window through its end, store the posts, and link them in MOVE_POSTS.
 
-Handles: national insiders plus the two teams' beat reporters, in batches. A game
+Handles: national insiders plus the two teams' beat reporters, in batches. Only posts
+about the game are linked (common/relevance.py: names a team or a rostered player, or
+comes from one of the teams' beat reporters); national insiders post about everyone. A game
 that was searched within XAI_MOVE_COOLDOWN_MINUTES reuses those posts instead of
 searching again. lead_minutes = move start - post time (negative = posted after).
 relevance and attribution_score are filled by explain_moves (milestone 5).
@@ -18,6 +20,7 @@ from datetime import datetime, timedelta
 
 from common import insiders
 from common.log import get_logger
+from common.relevance import RelevanceIndex, about_game
 from common.settings import env_float
 from pipelines.search_x import run_search, utcnow
 
@@ -25,9 +28,24 @@ log = get_logger("search_moves")
 PRE_WINDOW = timedelta(minutes=60)
 
 
-def link_rows(move: dict, posts: list[dict]) -> list[dict]:
+_index: dict[int, RelevanceIndex] = {}
+
+
+def relevance_index(store, season: int) -> RelevanceIndex:
+    """League rosters + beat assignments, built once per season per process."""
+    if season not in _index:
+        from common.settings import insiders as insider_rows
+        _index[season] = RelevanceIndex(store.roster(season), insider_rows())
+    return _index[season]
+
+
+def link_rows(move: dict, posts: list[dict], game: dict | None = None, index: RelevanceIndex | None = None) -> list[dict]:
+    """MOVE_POSTS rows for posts in the move's window that are about its game."""
+    terms = index.terms(game) if (index is not None and game) else None
     rows = []
     for p in posts:
+        if terms is not None and not about_game(p.get("text"), p.get("author"), terms):
+            continue
         if move["window_start"] - PRE_WINDOW <= p["posted_at"] <= move["window_end"]:
             lead = (move["window_start"] - p["posted_at"]).total_seconds() / 60
             rows.append({"move_id": move["move_id"], "post_id": p["post_id"],
@@ -59,7 +77,8 @@ def process_move(store, client, m: dict, game: dict | None, now: datetime, purpo
         # Include posts already stored for this window (e.g. from sweeps).
         known = {p["post_id"] for p in posts}
         posts += [p for p in store.posts_in_window(start, end, handles) if p["post_id"] not in known]
-    store.upsert_move_posts(link_rows(m, posts))
+    index = relevance_index(store, game["season"]) if game and game.get("season") else None
+    store.upsert_move_posts(link_rows(m, posts, game, index))
     store.upsert_line_moves([{"move_id": m["move_id"], "explain_status": "searched"}])
     return True
 

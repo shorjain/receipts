@@ -41,7 +41,7 @@ def fake_world(monkeypatch):
 
     def fake_oembed(pid, http=None):
         a = authors.get(pid)
-        return None if a is None else {"author_url": f"https://x.com/{a}", "html": f"<blockquote><p>post {pid}</p></blockquote>"}
+        return None if a is None else {"author_url": f"https://x.com/{a}", "html": f"<blockquote><p>Raiders news {pid}</p></blockquote>"}
 
     monkeypatch.setattr(xsearch, "fetch_oembed", fake_oembed)
     monkeypatch.setenv("XAI_DAILY_BUDGET_USD", "1.0")
@@ -105,7 +105,7 @@ def test_cooldown_reuses_posts_instead_of_searching(store, la_lv_game, fake_worl
     p = pid_at(T0 - timedelta(minutes=5))
     fake_world[p] = "AdamSchefter"
     store.upsert_posts([{"post_id": p, "author": "AdamSchefter", "posted_at": T0 - timedelta(minutes=5),
-                         "url": "u", "text": "t", "text_source": "oembed"}])
+                         "url": "u", "text": "Raiders injury update", "text_source": "oembed"}])
     store.insert_search_run({"run_id": "r", "purpose": "move", "game_id": la_lv_game["game_id"],
                              "window_end": T0 + timedelta(minutes=30), "ran_at": T0 + timedelta(minutes=50),
                              "cost_estimate_usd": 0.1})
@@ -142,7 +142,7 @@ def test_setup_searches_do_not_count_against_daily_budget(store):
 def test_without_x_client_moves_link_stored_posts(store, la_lv_game):
     seed_move(store, la_lv_game)
     store.upsert_posts([{"post_id": pid_at(T0 - timedelta(minutes=8)), "author": "AdamSchefter",
-                         "posted_at": T0 - timedelta(minutes=8), "url": "u", "text": "t", "text_source": "oembed"}])
+                         "posted_at": T0 - timedelta(minutes=8), "url": "u", "text": "Raiders injury update", "text_source": "oembed"}])
     assert search_moves.run(store, None, now=T0 + timedelta(hours=1)) == 1
     assert [r["lead_minutes"] for r in store.move_posts("m1")] == [8.0]
     assert store.search_runs() == []                      # nothing was searched or billed
