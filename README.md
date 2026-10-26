@@ -1,6 +1,8 @@
-# nfl-lines
+# receipts
 
-A personal NFL analytics app that answers two questions:
+*Why the line moved. Who called it first.*
+
+**receipts** (repo: `nfl-lines`) is a personal NFL analytics app that answers two questions:
 
 1. **Why did the line move?** Detect odds moves on Kalshi and sportsbooks, then show the tracked-insider posts that most likely caused them, with citations.
 2. **Which insiders can you trust?** Track every factual claim insiders make, check it against nflverse, and rank them by accuracy, earliness and market impact.
@@ -331,6 +333,25 @@ The local and Snowflake embedding models score similarity on different scales, s
 
 ## UI and API
 
+```bash
+streamlit run app/Home.py      # http://localhost:8501
+```
+
+The look is modeled on the Tech@NYU site, using its visual language only (no logo or name): a near-black background with a faint grid, Oxanium headings, Inter body text, monospace labels and buttons, and thin borders with square corners. It's monochrome, with green and red only for numbers going up or down. The theme lives in `.streamlit/config.toml` and `app/ui.py`; the name and tagline are `APP_NAME` and `TAGLINE` in `app/ui.py`.
+
+Every page is written for someone who doesn't bet. Each starts with a plain one-line summary and a "How to read this page" box, shows times in Eastern with "hours before kickoff", and writes moves and claims as sentences ("Ravens' chances to beat the Bengals fell from 48% to 42%", "Lamar Jackson (BAL) won't play"). Pages in the top bar:
+
+| Page | What it shows |
+|---|---|
+| Home | what the app is, live status (last odds check, moves this week, claims tracked), how it works, a glossary |
+| Line moves | each move as a sentence, whether 2 markets confirmed it, what probably happened (or "no clear cause"), a chart, and the posts cited as [P1]… |
+| Insider scorecard | trust score 0–100 (everyone starts at 50), right calls "4 of 5 checked", first to report, badges |
+| Insider receipts | one reporter's claims as sentences, how sure they sounded, the result and how it was checked |
+| Game odds | market vs model win chance per game, big disagreements flagged, and a plain verdict on how good the model is |
+| Ask | plain-English questions answered from stored data, with sources |
+
+A move whose explanation is grounded but says the posts don't explain it gets the status `unclear`, so it isn't counted as "cause found".
+
 DuckDB lets only one process open its file for writing, so the ingest loop writes a read-only copy, `data/ui_snapshot.duckdb`, every 5 minutes. The Streamlit pages (`app/`) and the FastAPI app (`api/main.py`) read that copy, so they never wake Snowflake.
 
 The **Moves** page lists every move:
@@ -436,7 +457,7 @@ pipelines/  load_nflverse, ingest_odds, detect_moves, compare_venues, search_mov
             sweep_insiders, search_x (shared runner), explain_moves, extract_claims,
             resolve_claims, score_insiders, sync_snowflake, run_all
 rag/        parse.py, retrieve.py, answer.py (Ask) and guard.py (shared grounding guard)
-app/        Streamlit: Home, Moves, Leaderboard, Insider, Games, Ask
+app/        Streamlit: Home.py (router + theme), views/ (home, moves, scorecard, insider, games, ask), ui.py
 api/        FastAPI read-only endpoints
 scripts/    probe_*.py
 tests/      unit tests on recorded fixtures (no network)

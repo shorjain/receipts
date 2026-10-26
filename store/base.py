@@ -378,6 +378,21 @@ class SqlStore:
             "SELECT * FROM API_USAGE WHERE source = ? ORDER BY called_at DESC LIMIT 1", [source])
         return rows[0] if rows else None
 
+    # ---- status for the UI ------------------------------------------------
+    def status_counts(self, since: datetime) -> dict:
+        """Headline numbers for the home page."""
+        one = lambda sql, p=(): (self._query(sql, list(p)) or [{"v": None}])[0]["v"]
+        return {
+            "last_price_at": one("SELECT MAX(taken_at) AS v FROM ODDS_SNAPSHOTS"),
+            "moves": one("SELECT COUNT(*) AS v FROM LINE_MOVES WHERE window_start >= ?", [utc_naive(since)]),
+            "moves_explained": one("SELECT COUNT(*) AS v FROM LINE_MOVES WHERE window_start >= ? "
+                                   "AND explain_status = 'explained'", [utc_naive(since)]),
+            "posts": one("SELECT COUNT(*) AS v FROM POSTS"),
+            "claims": one("SELECT COUNT(*) AS v FROM CLAIMS"),
+            "claims_checked": one("SELECT COUNT(*) AS v FROM CLAIM_RESOLUTIONS WHERE outcome IN ('correct', 'incorrect')"),
+            "insiders": one("SELECT COUNT(DISTINCT author) AS v FROM CLAIMS"),
+        }
+
     # ---- Ask chatbot retrieval -------------------------------------------
     def _similarity_sql(self, query: str | None) -> tuple[str, list] | None:
         """SQL ranking rows by embedding similarity to `query`; None where unsupported."""

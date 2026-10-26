@@ -40,6 +40,9 @@ TEAM_BONUS = 0.15
 DEFAULT_CREDIBILITY = 0.5
 MAX_POSTS = 5
 UNEXPLAINED = "Unexplained: no insider news before this move."
+# Grounded answers that still say the posts don't explain the move get their own status.
+UNCLEAR = re.compile(r"\b(unclear|not clear|no (?:tracked )?(?:post|insider)\w* (?:directly |clearly )?explain|"
+                     r"(?:do(?:es)?n't|do(?:es)? not|did not|didn't) (?:directly |clearly )?explain)", re.I)
 
 PROMPT = """You explain why an NFL betting line moved, using only the numbered evidence below.
 
@@ -134,8 +137,8 @@ def explain(store, ai, move: dict, game: dict | None, player_names: list[str]) -
     res = guard(answer.strip().strip('"'), evidence, valid, after)
     for sentence, why in res.dropped:
         log.info("guard dropped (%s): %s", why, sentence[:120])
-    return {"move_id": move["move_id"], "explanation": res.text,
-            "explain_status": "refused" if res.refused else "explained"}
+    status = "refused" if res.refused else "unclear" if UNCLEAR.search(res.text) else "explained"
+    return {"move_id": move["move_id"], "explanation": res.text, "explain_status": status}
 
 
 def run(store, ai, hours: float = 24, now: datetime | None = None) -> int:
@@ -157,7 +160,7 @@ def run(store, ai, hours: float = 24, now: datetime | None = None) -> int:
             log.error("explain failed for %s: %s", m["move_id"], e)
     store.upsert_line_moves(updates)
     log.info("explained %d moves: %s", len(updates),
-             {s: sum(u["explain_status"] == s for u in updates) for s in ("explained", "unexplained", "refused")})
+             {s: sum(u["explain_status"] == s for u in updates) for s in ("explained", "unclear", "unexplained", "refused")})
     return len(updates)
 
 

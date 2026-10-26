@@ -117,3 +117,13 @@ def model_report() -> dict | None:
     from common.settings import ROOT
     p = ROOT / "data" / "model" / "report.json"
     return json.loads(p.read_text()) if p.exists() else None
+
+
+@st.cache_data(ttl=60)
+def status() -> dict:
+    s = store()
+    try:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        return s.status_counts(now - timedelta(days=7))
+    finally:
+        s.close()

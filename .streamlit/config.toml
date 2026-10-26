@@ -1,0 +1,18 @@
+[theme]
+base = "dark"
+backgroundColor = "#0d0d0d"
+secondaryBackgroundColor = "#161616"
+textColor = "#f5f5f5"
+primaryColor = "#3a3a3a"
+borderColor = "#2e2e2e"
+baseRadius = "none"
+font = "Inter, sans-serif"
+headingFont = "Oxanium, Inter, sans-serif"
+codeFont = "'JetBrains Mono', Menlo, monospace"
+
+[client]
+toolbarMode = "minimal"
+showSidebarNavigation = true
+
+[browser]
+gatherUsageStats = false

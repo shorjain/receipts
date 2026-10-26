@@ -83,3 +83,10 @@ def test_ungrounded_answer_is_refused(store, la_lv_game):
     em.run(store, FakeAI("Sharp bettors moved it 12 points because of weather."), now=T0 + timedelta(hours=1))
     m = store.line_moves()[0]
     assert m["explain_status"] == "refused" and m["explanation"].startswith("No grounded explanation")
+
+
+def test_grounded_but_unclear_answers_get_their_own_status(store, la_lv_game):
+    seed(store, la_lv_game, [("1", "AdamSchefter", 12, "Rams QB Matthew Stafford is inactive today.")])
+    em.run(store, FakeAI("The cause of the move from 40.0% to 45.0% [M1] is unclear from tracked insiders."),
+           now=T0 + timedelta(hours=1))
+    assert store.line_moves()[0]["explain_status"] == "unclear"
