@@ -12,3 +12,4 @@ data/*.tmp
 .claude/
 data/demo.duckdb
 data/model/
+data/logs/
