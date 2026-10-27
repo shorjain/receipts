@@ -12,6 +12,9 @@ static = Path(__file__).parent / "static"
 st.set_page_config(page_title=ui.APP_NAME, page_icon=str(static / "icon.svg"), layout="wide",
                    initial_sidebar_state="collapsed")
 st.html(ui.CSS)
+live = ui.live_data_warning()
+if live:
+    st.warning(live)
 st.logo(str(static / "logo.svg"), size="large")
 
 views = Path(__file__).parent / "views"

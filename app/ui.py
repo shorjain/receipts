@@ -81,6 +81,23 @@ button[aria-checked] { border-radius: 0 !important; font-family: 'JetBrains Mono
 """
 
 
+def live_data_warning() -> str | None:
+    """A banner message when the pages aren't reading the collector's live snapshot,
+    e.g. a demo or trial database left in UI_SNAPSHOT_PATH, or a collector that stopped."""
+    from store import snapshot_path
+    path = snapshot_path()
+    if path.name != "ui_snapshot.duckdb":
+        return (f"You're looking at test data ({path.name}), not live data. Restart the app without "
+                f"UI_SNAPSHOT_PATH:  streamlit run app/Home.py")
+    if not path.exists():
+        return "No live data yet. Start the collector:  python -m scripts.service install"
+    mins = (datetime.now().timestamp() - path.stat().st_mtime) / 60
+    if mins > 15:
+        return (f"Live data is {mins:.0f} minutes old, so the collector may have stopped. "
+                f"Check it with:  python -m scripts.service status")
+    return None
+
+
 def header(title: str, subtitle: str, how: str | None = None) -> None:
     st.title(title)
     st.markdown(f'<p style="color:#d4d4d4;font-size:1.08rem;margin-top:-6px">{subtitle}</p>', unsafe_allow_html=True)

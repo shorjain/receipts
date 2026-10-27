@@ -20,11 +20,6 @@ c[1].metric("line moves this week", f"{len(week)}", f"{found} with a clear cause
 c[2].metric("insider claims tracked", f"{stats['claims'] or 0}",
             f"{stats['claims_checked'] or 0} checked so far", delta_color="off", delta_arrow="off")
 c[3].metric("reporters followed", f"{stats['insiders'] or 0}", f"{stats['posts'] or 0} posts read", delta_color="off", delta_arrow="off")
-if age is None:
-    st.warning("No data yet. Start the collector: `python -m scripts.service install`.")
-elif age > 15:
-    st.warning(f"The data hasn't refreshed in {age:.0f} minutes. Is the collector running? "
-               "Check with `python -m scripts.service status`.")
 
 st.subheader("How it works")
 steps = [

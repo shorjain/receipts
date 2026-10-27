@@ -35,7 +35,7 @@ def plist() -> dict:
                              "-W", "ignore::FutureWarning", "-m", "pipelines.ingest_odds", "--loop"],
         "WorkingDirectory": str(ROOT),
         "EnvironmentVariables": {"LOG_FILE": str(LOG), "PYTHONUNBUFFERED": "1",
-                                 "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"},
+                                 "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
         "RunAtLoad": True,
         "KeepAlive": True,
         "ThrottleInterval": 60,          # wait at least a minute between restarts
